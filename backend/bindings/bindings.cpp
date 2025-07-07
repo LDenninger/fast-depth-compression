@@ -1,5 +1,9 @@
 // bindings/bindings.cpp
 
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+#include <frameobject.h>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>        // for automatic std::vector ↔ Python list conversion
 #include "rvl.h"
