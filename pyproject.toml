@@ -1,0 +1,29 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.3.3",
+    "pybind11>=2.5.0",
+    "cmake>=3.15",
+    "ninja",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "fdcomp"
+version = "0.1.0"
+description = "Fast Depth Compression Library with TRVL and RVL algorithms"
+readme = "README.md"
+requires-python = ">=3.6"
+dependencies = [
+    "numpy>=1.15.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.scikit-build]
+cmake.verbose = true
+logging.level = "INFO"
+cmake.args = ["-DCMAKE_BUILD_TYPE=Release"]

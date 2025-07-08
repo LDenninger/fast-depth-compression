@@ -1,4 +1,34 @@
+# Build artifacts
 _skbuild/
 */__pycache__/
 *.egg-info
 build/
+dist/
+*.so
+*.dll
+*.dylib
+
+# Data files
+*.npz
+!examples/depth.npz
+*.png
+*.dep
+*.mp4
+*.avi
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

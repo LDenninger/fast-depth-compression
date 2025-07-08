@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rvl.h"
+#include <iostream>
 
 namespace trvl
 {
@@ -65,7 +66,7 @@ public:
 
             return rvl::compress(depth_buffer, frame_size);
         }
-
+        
         std::vector<short> pixel_diffs(frame_size);
         for (int i = 0; i < frame_size; ++i) {
             pixel_diffs[i] = pixels_[i].value;
@@ -73,7 +74,10 @@ public:
             pixel_diffs[i] = pixels_[i].value - pixel_diffs[i];
         }
 
-        return rvl::compress(pixel_diffs.data(), frame_size);
+        auto tmp = rvl::compress(pixel_diffs.data(), frame_size);
+        
+
+        return tmp;
     }
 
 private:

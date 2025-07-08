@@ -135,4 +135,51 @@ PYBIND11_MODULE(fdc_bindings, m) {
         "List[int]\n"
         "    The decompressed depth buffer."
     );
+
+    m.def("RVLCompress",
+        [] (const std::vector<short> &input_buffer) {
+            int num_pixels = static_cast<int>(input_buffer.size());
+            // call rvl::compress
+            auto compressed = rvl::compress(
+                const_cast<short*>(input_buffer.data()),
+                num_pixels
+            );
+            // return as Python bytes
+            return py::bytes(compressed.data(), compressed.size());
+        },
+        py::arg("depth_buffer"),
+        "Compress an array of 16-bit depth values using the RVL algorithm (rvl namespace version).\n\n"
+        "Parameters\n"
+        "----------\n"
+        "depth_buffer : List[int]\n"
+        "    Array of 16-bit depth values to compress.\n\n"
+        "Returns\n"
+        "-------\n"
+        "bytes\n"
+        "    The compressed bitstream."
+    );
+
+    m.def("RVLDecompress",
+        [] (py::bytes compressed, int num_pixels) {
+            // convert Python bytes → vector<char>
+            std::string tmp = compressed;
+            std::vector<char> input(tmp.begin(), tmp.end());
+            // call rvl::decompress
+            auto output = rvl::decompress(input.data(), num_pixels);
+            return output;  // auto-converted to List[int]
+        },
+        py::arg("compressed_data"),
+        py::arg("num_pixels"),
+        "Decompress an RVL-compressed bitstream into a list of 16-bit depth values (rvl namespace version).\n\n"
+        "Parameters\n"
+        "----------\n"
+        "compressed_data : bytes\n"
+        "    The RVL-compressed bitstream.\n"
+        "num_pixels : int\n"
+        "    Number of depth values expected in output.\n\n"
+        "Returns\n"
+        "-------\n"
+        "List[int]\n"
+        "    The decompressed depth buffer."
+    );
 }
