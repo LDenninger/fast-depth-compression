@@ -75,7 +75,6 @@ public:
         }
 
         auto tmp = rvl::compress(pixel_diffs.data(), frame_size);
-        
 
         return tmp;
     }

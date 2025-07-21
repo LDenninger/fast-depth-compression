@@ -14,17 +14,18 @@
 - **📊 TRVL Algorithm**: Advanced temporal compression for depth video sequences
 - **⚡ RVL Algorithm**: Wilson's Run-Length Variable compression implementation
 - **🔄 Lossless Compression**: Perfect reconstruction of depth data
-- **🎯 Multiple Interfaces**: Support for both Wilson's original functions and modern C++ RAII versions
 - **📦 Easy Integration**: Simple Python API for seamless workflow integration
 
 ## 🏗️ Installation
 
 ### Prerequisites
 
-Before installation, ensure you have:
+These prereuisities are currently based on my current setups, I have tested the package on.
 
-- **Python** 3.6 or higher
-- **CMake** 3.15 or higher  
+So, before installation, ensure you have:
+
+- **Python** 3.11 or higher
+- **CMake** 3.30 or higher  
 - **OpenCV** development libraries
 - **C++14** compatible compiler
 
@@ -139,24 +140,6 @@ l2_error = np.linalg.norm(depth_arr - loaded_depth)
 print(f"Reconstruction error: {l2_error}")  # Should be 0.0
 ```
 
-### RVL Algorithm Usage
-
-```python
-import fdcomp
-import numpy as np
-
-# Generate sample depth data
-depth_data = np.random.randint(0, 32767, size=1000, dtype=np.int16)
-
-# Compress using RVL
-compressed = fdcomp.RVLCompress(depth_data.tolist())
-print(f"Original: {len(depth_data) * 2} bytes → Compressed: {len(compressed)} bytes")
-
-# Decompress
-decompressed = fdcomp.RVLDecompress(compressed, len(depth_data))
-print(f"Lossless: {np.array(decompressed) == depth_data}")
-```
-
 ## 📖 API Reference
 
 ### 🎬 TRVL Classes (Temporal Compression)
@@ -183,36 +166,22 @@ print(f"Lossless: {np.array(decompressed) == depth_data}")
 | `load()` | Load depth array from file | `filename: str` |
 | `dump()` | Serialize depth data | `data: np.ndarray` |
 
-## 🧪 Examples
+## 🧪 Tests
 
-Run the included examples to see fdcomp in action:
+Unit tests cover all core algorithms and I/O functions, ensuring lossless compression across both TRVL and RVL implementations.
+
+- **test_trvl.py**: Verify TRVL temporal encoder/decoder round-trip on random depth frames.
+- **test_rvl.py**: Verify RVL single-frame encoder/decoder on random integer depth buffers.
+
+To run all tests:
 
 ```bash
-# Navigate to examples directory
-cd examples
-
-# Run TRVL compression example
-python encoding.py
-
-# Run file save/load example  
-python saving.py
+pytest -q --disable-warnings --maxfail=1
 ```
 
-## 🔧 Development
-
-### Building from Source
-
+To run separate test with outputs:
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd fast-depth-compression
-
-# Install in development mode
-pip install -e .
-
-# Run examples
-cd examples
-python encoding.py
+python tests/test_trvl.py
 ```
 
 ### Project Structure

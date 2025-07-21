@@ -48,5 +48,6 @@ class DecoderRVL(Decoder):
     def decode(self, data: bytes, *args, **kwargs) -> bytes:
         if RVLDecompress is None:
             raise ImportError("C++ bindings not available. Please install the package with 'pip install .'")
-        data_compressed = RVLDecompress(data, self.frame_size)
-        return data_compressed
+        data_uncompressed = RVLDecompress(data, self.frame_size)
+        data_uncompressed = np.array(data_uncompressed, dtype=np.int16)
+        return data_uncompressed
