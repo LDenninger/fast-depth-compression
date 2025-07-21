@@ -244,12 +244,11 @@ If you use this library in your work, please consider citing the authors of the 
 
 ## 🤝 Contributing
 
-We welcome contributions! Please feel free to submit issues and enhancement requests.
+I welcome any contributions or algorithm requests for depth compression. Provided how much work is required, meaning whether there is an existing C++ implementation or only documentation, this process might take longer. 
 
 ## 📄 License
 
-[Your License Here]
+This projects is licensed under the **BSD-3** license.
 
----
 
-**Made with ❤️ for the computer vision community**
+
