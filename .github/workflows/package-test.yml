@@ -15,10 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install OpenCV C++ libraries
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libopencv-dev
+          sudo apt-get install -y libopencv-dev gnuplot
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
