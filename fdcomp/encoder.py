@@ -1,3 +1,7 @@
+import io
+
+from typing import List
+
 import numpy as np
 from termcolor import colored
 
@@ -108,9 +112,46 @@ class VideoEncoder(Encoder):
 ########## Implemented Encoders ############
 ############################################    
 
+############### Raw Encoder ################
+class EncoderRaw(FrameEncoder):
+    """
+        Frame encoder converting the input data to the raw bytes of a numpy array.
+    
+    """
+    name: str = "raw"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def encode(self, data: np.ndarray, *args, **kwargs) -> bytes:
+        buf = io.BytesIO()
+        np.save(buf, data)
+        dbytes = buf.getvalue()
+        buf.close()
+        return dbytes
+
+class EncoderRawVideo(VideoEncoder):
+    """
+        Video encoder converting the input data to the raw bytes of a numpy array.
+        Wraps the corresponding frame encoder for sequences of depth frames.
+    """
+    name: str = "raw"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(frame_encoder=EncoderRaw(), *args, **kwargs)
+
+    def encode(self, data: np.ndarray, *args, **kwargs) -> List[bytes]:
+        if data.ndim == 2:
+            data = data[np.newaxis, ...] 
+
+        compressed_data = []
+        for i in range(data.shape[0]):
+            frame_compressed = self.frame_encoder.encode(data[i], *args, **kwargs)
+            compressed_data.append(frame_compressed)
+        return compressed_data
+
 
 ############## TRVL Encoder ################
-
 class EncoderTRVL(FrameEncoder):
     """
         Frame encoder for the temporal RVL encoding.
@@ -179,7 +220,6 @@ class EncoderTRVLVideo(VideoEncoder):
         return compressed_data, keyframes
 
 ############### RVL Encoder ################
-    
 class EncoderRVL(FrameEncoder):
     """
         Frame encoder for the RVL encoding.

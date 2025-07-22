@@ -4,16 +4,20 @@ from .fdcomp import load, loads, dump, save
 from .encoder import (
     # Base Encoder classes
     Encoder, FrameEncoder, VideoEncoder,
+    # Raw
+    EncoderRaw, EncoderRawVideo,
     # TRVL
-    EncoderTRVL, EncoderTRVLVideo, EncoderRVLVideo,
+    EncoderTRVL, EncoderTRVLVideo,
     # RVL
-    EncoderRVL, EncoderTRVLVideo
+    EncoderRVL, EncoderRVLVideo
 )
 from .decoder import (
     # Base Decoder classes
     Decoder, FrameDecoder, VideoDecoder,
+    # Raw
+    DecoderRaw, DecoderRawVideo,
     # TRVL
-    DecoderTRVL, DecoderTRVLVideo, DecoderRVLVideo,
+    DecoderTRVL, DecoderTRVLVideo,
     # RVL
     DecoderRVL, DecoderRVLVideo
 )

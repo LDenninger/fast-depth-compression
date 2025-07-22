@@ -1,5 +1,6 @@
 import numpy as np
 from typing import List
+import io                              # add for raw decoding
 
 # Import bindings with fallback
 def _get_bindings():
@@ -12,7 +13,15 @@ def _get_bindings():
 
 _DecoderTRVL, RVLDecompress = _get_bindings()
 
+############################################
+############### Base Classes ###############
+############################################
+
 class Decoder:
+    """
+        Base class for all decoders.
+        Implemented decoders should inherit from either the subclasses FrameDecoder or VideoDecoder.
+    """
     
     def __init__(self, frame_size: int = None, *args, **kwargs):
         self._frame_size = frame_size
@@ -28,6 +37,11 @@ class Decoder:
         raise NotImplementedError("Subclasses should implement the decode() method.")
 
 class FrameDecoder(Decoder):
+    """
+        FrameDecoder base class.
+        This decoder decodes single frames of depth data.
+        Implemented decoders should implement the decode() method.
+    """
     def decode(self, data: bytes, *args, **kwargs) -> np.ndarray:
         return super().decode(data, *args, **kwargs)
     
@@ -40,6 +54,11 @@ class FrameDecoder(Decoder):
         self._frame_size = value
 
 class VideoDecoder(Decoder):
+    """
+        VideoDecoder base class.
+        This decoder decodes sequences of frames (videos) of depth data.
+        If used as a wrapper, provide a FrameDecoder instance.
+    """
     def __init__(self, frame_decoder: FrameDecoder = None, *args, **kwargs):
         frame_size = kwargs.get('frame_size', None)
         self.frame_decoder = frame_decoder
@@ -71,8 +90,53 @@ class VideoDecoder(Decoder):
             return outputs
         
         return super().decode(data, *args, **kwargs)
+    
+############################################
+########## Implemented Encoders ############
+############################################ 
+
+############### Raw Decoder ################
+
+class DecoderRaw(FrameDecoder):
+    """
+        Frame decoder converting raw bytes back to a numpy array.
+    """
+    name: str = "raw"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def decode(self, data: bytes, *args, **kwargs) -> np.ndarray:
+        buf = io.BytesIO(data)
+        arr = np.load(buf)
+        buf.close()
+        return arr
+
+class DecoderRawVideo(VideoDecoder):
+    """
+        Video decoder converting raw bytes back to numpy array frames.
+        Wraps the corresponding FrameDecoder for sequences of frames.
+    """
+    name: str = "raw"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(frame_decoder=DecoderRaw(), *args, **kwargs)
+
+    def decode(self, data: List[bytes], *args, **kwargs) -> np.ndarray:
+        outputs = []
+        for chunk in data:
+            frame = self.frame_decoder.decode(chunk)
+            outputs.append(frame)
+        return np.stack(outputs, axis=0)
+
+############## TRVL Decoder ################
 
 class DecoderTRVL(FrameDecoder):
+    """
+        Frame decoder for temporal RVL decoding.
+        Reference: https://github.com/hanseuljun/temporal-rvl
+        C++ binding: ./backend/cpp/include/trvl.h
+    """
     name: str = "TRVL"
     binding_class = _DecoderTRVL
     def __init__(self, 
@@ -106,6 +170,10 @@ class DecoderTRVL(FrameDecoder):
             self._decoder = _DecoderTRVL(self._frame_size)
 
 class DecoderTRVLVideo(VideoDecoder):
+    """
+        Video decoder for temporal RVL decoding.
+        Wraps the corresponding FrameDecoder for sequences of depth frames.
+    """
     name: str = "TRVL"
     def __init__(self, frame_size: int = None, suppress_warnings: bool = False, *args, **kwargs):
         frame_decoder = DecoderTRVL(frame_size, suppress_warnings)
@@ -129,7 +197,13 @@ class DecoderTRVLVideo(VideoDecoder):
         outputs = np.stack(outputs, axis=0)
         return outputs
 
+############### RVL Decoder ################
+
 class DecoderRVL(FrameDecoder):
+    """
+        Frame decoder for RVL decoding.
+        C++ binding: ./backend/cpp/include/rvl.h
+    """
     name: str = "RVL"
 
     def __init__(self, frame_size: int = None, suppress_warnings: bool = False, *args, **kwargs):
@@ -143,6 +217,10 @@ class DecoderRVL(FrameDecoder):
         return np.array(data_uncompressed, dtype=np.int16)
 
 class DecoderRVLVideo(VideoDecoder):
+    """
+        Video decoder for RVL decoding.
+        Wraps the corresponding FrameDecoder for sequences of depth frames.
+    """
     name: str = "RVL"
     def __init__(self, frame_size: int = None, suppress_warnings: bool = False, *args, **kwargs):
         self.suppress_warnings = suppress_warnings

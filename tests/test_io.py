@@ -14,24 +14,22 @@ except Exception as e:
     traceback.print_exc()
 
 TRVL_PATH = './examples/depth_trvl_tmp'
-RVL_PATH = './examples/depth_rvl_tmp'
+RVL_PATH  = './examples/depth_rvl_tmp'
+RAW_PATH  = './examples/depth_raw_tmp'   # add raw path
 
 def load(path: str = './examples/depth.npz'):
-
     depth = np.load(path)['depth']
     return depth
 
-
 def test_saving(path: str = './examples/depth.npz'):
-
     try:
         depth = load(path)
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while loading depth data:\n{e}')
         return False
     success = True
-    print(colored("\nTest: Saving using TRVL encoder.", "blue"))
 
+    print(colored("\nTest: Saving using TRVL encoder.", "blue"))
     try:
         fdcomp.save(depth, TRVL_PATH, 'trvl')
         print(colored("SUCCESS: ", 'green'), 'Data saved successfully using TRVL encoder.')
@@ -49,17 +47,25 @@ def test_saving(path: str = './examples/depth.npz'):
         traceback.print_exc()
         success = True
 
+    print(colored("\nTest: Saving using raw encoder.", "blue"))  # add raw save
+    try:
+        fdcomp.save(depth, RAW_PATH, 'raw')
+        print(colored("SUCCESS: ", 'green'), 'Data saved successfully using raw encoder.')
+    except Exception as e:
+        print(colored("ERROR: ", 'red'), f'An error occurred while saving data (raw):\n{e}')
+        traceback.print_exc()
+        success = False
+
     return success
 
 def test_loading(path: str = './examples/depth.npz'):
-
     try:
         depth = load(path)
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while loading depth data:\n{e}')
         return False
     success = True
-    depth_trvl, depth_rvl = None, None
+    depth_trvl, depth_rvl, depth_raw = None, None, None
 
     print(colored("\nTest: Loading using TRVL encoder.", "blue"))
     try:
@@ -79,9 +85,16 @@ def test_loading(path: str = './examples/depth.npz'):
         traceback.print_exc()
         success = False
 
+    print(colored("\nTest: Loading using raw encoder.", "blue"))  # add raw load
+    try:
+        depth_raw = fdcomp.load(RAW_PATH, 'raw')
+        print(colored("SUCCESS: ", 'green'), 'Data loaded successfully using raw encoder.')
+    except Exception as e:
+        print(colored("ERROR: ", 'red'), f'An error occurred while loading data (raw):\n{e}')
+        traceback.print_exc()
+        success = False
 
     ##-- Validation --##
-    valid_success = True
     print(colored("\nValidation:", "blue"))
 
     if depth_trvl is not None:
@@ -103,21 +116,25 @@ def test_loading(path: str = './examples/depth.npz'):
             print(colored("ERROR: ", 'red'), f'RVL loaded data has high MSE: {mse_rvl}')
             success = False
 
-    if valid_success:
-        print(colored("SUCCESS: ", 'green'), 'All validations passed successfully.')
-   
+    if depth_raw is not None:  # raw is lossless
+        if depth.shape != depth_raw.shape:
+            print(colored("ERROR: ", 'red'), f'Raw loaded data shape {depth_raw.shape} does not match original {depth.shape}')
+            success = False
+        if not np.array_equal(depth, depth_raw):
+            print(colored("ERROR: ", 'red'), "Raw loaded data does not match original.")
+            success = False
 
+    if success:
+        print(colored("SUCCESS: ", 'green'), 'All validations passed successfully.')
     return success
 
 def test_dumping(path: str = './examples/depth.npz'):
-    
     try:
         depth = load(path)
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while loading depth data:\n{e}')
         return False
     success = True
-
     frame_size = depth.shape[-1] * depth.shape[-2]
 
     print(colored("\nTest: Dumping using TRVL encoder.", "blue"))
@@ -138,6 +155,14 @@ def test_dumping(path: str = './examples/depth.npz'):
         traceback.print_exc()
         success = False
 
+    print(colored("\nTest: Dumping using raw encoder.", "blue"))  # add raw dump
+    try:
+        data_raw = fdcomp.dump(depth, 'raw')
+        print(colored("SUCCESS: ", 'green'), 'Data dumped successfully using raw encoder.')
+    except Exception as e:
+        print(colored("ERROR: ", 'red'), f'An error occurred while dumping data (raw):\n{e}')
+        traceback.print_exc()
+        success = False
 
     print(colored("\nTest: Loading from TRVL dump.", "blue"))
     try:
@@ -159,8 +184,16 @@ def test_dumping(path: str = './examples/depth.npz'):
         traceback.print_exc()
         success = False
 
+    print(colored("\nTest: Loading from raw dump.", "blue"))  # add raw loads
+    try:
+        data_raw_dec = fdcomp.loads(data_raw, 'raw')
+        print(colored("SUCCESS: ", 'green'), 'Data decoded successfully from raw dump.')
+    except Exception as e:
+        print(colored("ERROR: ", 'red'), f'An error occurred while decoding raw dump:\n{e}')
+        traceback.print_exc()
+        success = False
+
     ##-- Validation --##
-    valid_success = True
     print(colored("\nValidation:", "blue"))
     if data_trvl_dec is not None:
         if depth.shape != data_trvl_dec.shape:
@@ -180,14 +213,21 @@ def test_dumping(path: str = './examples/depth.npz'):
         if mse_rvl > 1e-2:
             print(colored("ERROR: ", 'red'), f'RVL decoded data has high MSE: {mse_rvl}')
             success = False
-    
-    if valid_success:  
+
+    if 'data_raw_dec' in locals():
+        if depth.shape != data_raw_dec.shape:
+            print(colored("ERROR: ", 'red'), f'Raw decoded data shape {data_raw_dec.shape} does not match original {depth.shape}')
+            success = False
+        if not np.array_equal(depth, data_raw_dec):
+            print(colored("ERROR: ", 'red'), "Raw decoded data does not match original.")
+            success = False
+
+    if success:
         print(colored("SUCCESS: ", 'green'), 'All validations passed successfully.')
 
     return success
 
 if __name__=="__main__":
-
     parser = argparse.ArgumentParser(description="Test fdcomp I/O operations")
     parser.add_argument('--path', default='./examples/depth.npz', type=str, help="Path to the depth map file")
     args = parser.parse_args()

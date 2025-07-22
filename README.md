@@ -295,7 +295,7 @@ Unit tests cover all core algorithms and I/O functions, ensuring lossless compre
 To run all tests:
 
 ```bash
-pytest -q --disable-warnings --maxfail=1
+pytest -v --disable-warnings --maxfail=1
 ```
 
 To run separate test with outputs:
@@ -315,7 +315,13 @@ If you use this library in your work, please consider citing the authors of the 
 <a name="contributing"></a>
 ## 🤝 Contributing
 
-I welcome any contributions or algorithm requests for depth compression. Provided how much work is required, meaning whether there is an existing C++ implementation or only documentation, this process might take longer. 
+I welcome any contributions or algorithm requests for depth compression. Provided how much work is required, meaning whether there is an existing C++ implementation or only documentation, this process might take longer.
+
+### Upcoming Changes
+There are a few things that are already planned to be added/changed:
+- The complete abstraction layer and implementation of frame-wise and video encoder/decoders has to be moved to the C++ backend
+- Tests exclusively for the C++ backend
+- Tests to profile the encoder and decoder with comprehensive summary
 
 <a name="license"></a>
 ## 📄 License
