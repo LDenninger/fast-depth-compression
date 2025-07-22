@@ -15,9 +15,14 @@ readme = "README.md"
 requires-python = ">=3.6"
 dependencies = [
     "numpy>=1.15.0",
+    "termcolor>=1.1.0",
+    "gnuplotlib>=0.31.0",
+    "matplotlib>=3.0.0",
+    "opencv-python>=4.5.0",
 ]
 
 [project.optional-dependencies]
+# keep test dependencies only for pytest
 test = [
     "pytest",
     "pytest-cov",
