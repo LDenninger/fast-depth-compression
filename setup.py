@@ -4,10 +4,10 @@ import sys
 
 setup(
     name="fdcomp",
-    version="0.1.0",
+    version="0.2.0",
     description="Fast Depth Compression Library with TRVL and RVL algorithms",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Luis Denninger",
+    author_email="luis0512@web.de",
     packages=find_packages(),
     cmake_install_dir="fdcomp",
     cmake_args=[

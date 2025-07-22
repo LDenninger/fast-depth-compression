@@ -29,6 +29,7 @@
 | [🤝 **Contributing**](#contributing)                             | Guidelines to contribute to the project      |
 | [📄 **License**](#license)                                       | Licensing information                        |
 
+<a name="project-structure"></a>
 ## 📁 Project Structure
 
 ```
@@ -41,6 +42,7 @@ fast-depth-compression/
 └── 📄 README.md             # This file
 ```
 
+<a name="installation"></a>
 ## 🏗️ Installation
 
 ### Prerequisites
@@ -86,6 +88,7 @@ pip install scikit-build
 pip install .
 ```
 
+<a name="quick-start"></a>
 ## 🎯 Quick Start
 
 ### Basic TRVL Compression Example
@@ -165,6 +168,7 @@ l2_error = np.linalg.norm(depth_arr - loaded_depth)
 print(f"Reconstruction error: {l2_error}")  # Should be 0.0
 ```
 
+<a name="api-reference"></a>
 ## 📖 API Reference
 
 ### Base Classes
@@ -279,6 +283,7 @@ class VideoDecoder(Decoder):
 - **loads(data: Union[bytes, List[bytes]], decoder: Union[str, Decoder]) → np.ndarray**
 - **dump(data: np.ndarray, encoder: Union[str, Encoder]) → bytes**
 
+<a name="tests"></a>
 ## 🧪 Tests
 
 Unit tests cover all core algorithms and I/O functions, ensuring lossless compression across both TRVL and RVL implementations.
@@ -300,28 +305,22 @@ python tests/test_trvl.py
 
 
 
-## 🏆 Performance
-
-fdcomp delivers exceptional compression performance:
-
-- **Speed**: C++ backend ensures minimal latency
-- **Compression**: Typically 2-10x compression ratios on depth data
-- **Quality**: Mathematically lossless reconstruction
-- **Memory**: Efficient streaming compression for large sequences
-
+<a name="algorithm-references"></a>
 ## 📜 Algorithm References
 If you use this library in your work, please consider citing the authors of the compression algorithms used:
 
 - **RVL**: Wilson, A. D. (2017). "Fast lossless depth image compression." *ACM International Conference on Interactive Surfaces and Spaces*
 - **TRVL**: Jun, H & Bailenson, J. (2020). "Temporal RVL: A Depth Stream Compression Method"
 
+<a name="contributing"></a>
 ## 🤝 Contributing
 
 I welcome any contributions or algorithm requests for depth compression. Provided how much work is required, meaning whether there is an existing C++ implementation or only documentation, this process might take longer. 
 
+<a name="license"></a>
 ## 📄 License
 
-Parts of this project (`./backend/cpp/include/rvl.h`, `./backend/cpp/include/trvl.h`) are licensed under Apache 2.0, taken from [https://github.com/hanseuljun/temporal-rvl/tree/master].(https://github.com/hanseuljun/temporal-rvl/tree/master)
+Parts of this project (`./backend/cpp/include/rvl.h`, `./backend/cpp/include/trvl.h`) are licensed under Apache 2.0, taken from [https://github.com/hanseuljun/temporal-rvl/tree/master](https://github.com/hanseuljun/temporal-rvl/tree/master)
 
 All other parts are licensed under the **Apache 2.0** license.
 
