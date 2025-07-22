@@ -19,7 +19,9 @@ setup(
     include_package_data=True,
     install_requires=[
         "numpy>=1.15.0",
-        "gnuplotlib"
+        "gnuplotlib",
+        "termcolor",
+        "matplotlib>=3.0.0",
     ],
     setup_requires=[
         "pybind11>=2.5.0",
@@ -39,4 +41,12 @@ setup(
         "Programming Language :: Python :: 3.11",
         "Programming Language :: C++",
     ],
+    extras_require={
+        "test": [
+            "pytest",
+            "pytest-cov",
+            "opencv-python",
+            "gnuplotlib",
+        ],
+    },
 )
