@@ -5,7 +5,8 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![C++](https://img.shields.io/badge/C++-14-orange.svg)](https://en.cppreference.com/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.0+-green.svg)](https://opencv.org/)
-![Tests](https://github.com/LDenninger/fast-depth-compression/actions/workflows/python-package.yml/badge.svg)
+[![Tests](https://img.shields.io/github/actions/workflow/status/LDenninger/fast-depth-compression/package-test.yml?label=Tests&style=flat)](https://github.com/LDenninger/fast-depth-compression/actions/workflows/package-test.yml)
+
 
 **Disclaimer:** The project is currently under development and there might be installation issues or issues in the backend. Please report these in the issues, I am trying to fix it as soon as possible. Pre-compiled binaries will be available at some point but for now please install everything from source. There are also some logic parts which in the future will be moved into the CPP-backend in favor of efficiency.
 
