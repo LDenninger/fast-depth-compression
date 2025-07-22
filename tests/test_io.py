@@ -22,7 +22,7 @@ def load(path: str = './examples/depth.npz'):
     return depth
 
 
-def test_saving(path: str):
+def test_saving(path: str = './examples/depth.npz'):
 
     try:
         depth = load(path)
@@ -51,7 +51,7 @@ def test_saving(path: str):
 
     return success
 
-def test_loading(path: str):
+def test_loading(path: str = './examples/depth.npz'):
 
     try:
         depth = load(path)
@@ -109,7 +109,7 @@ def test_loading(path: str):
 
     return success
 
-def test_dumping(path: str):
+def test_dumping(path: str = './examples/depth.npz'):
     
     try:
         depth = load(path)
