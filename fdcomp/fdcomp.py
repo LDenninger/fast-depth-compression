@@ -4,13 +4,13 @@ from abc import abstractmethod
 import numpy as np
 import struct
 
-from .encoder import Encoder, EncoderTRVL
-from .decoder import Decoder, DecoderTRVL
+from .encoder import Encoder, EncoderTRVL, EncoderTRVLVideo, EncoderRVLVideo
+from .decoder import Decoder, DecoderTRVL, DecoderTRVLVideo, DecoderRVLVideo
 
-DEFAULT_ENCODER = EncoderTRVL
+DEFAULT_ENCODER = EncoderTRVLVideo
 DEFAULT_DECODER = DecoderTRVL
 
-def load(file: Union[str, Path], decoder: Decoder = None, *args, **kwargs) -> np.ndarray:
+def load(file: Union[str, Path], decoder: Union[Decoder, str] = None, *args, **kwargs) -> np.ndarray:
     """
     Load a depth map from a file using the provided decoder.
     
@@ -18,11 +18,39 @@ def load(file: Union[str, Path], decoder: Decoder = None, *args, **kwargs) -> np
     :param decoder: An instance of a Decoder subclass.
     :return: The decoded depth map as a numpy array.
     """
+    if isinstance(decoder, str):
+        if decoder.lower() == "trvl":
+            decoder = DecoderTRVLVideo(*args, **kwargs)
+        elif decoder.lower() == "rvl":
+            decoder = DecoderRVLVideo(*args, **kwargs)
+        else:
+            raise ValueError(f"Unsupported decoder name: {decoder}")
 
     return Loader.load(file, decoder, *args, **kwargs)
 
+def loads(data: Union[bytes, List[bytes]], decoder: Union[Decoder, str] = None, *args, **kwargs) -> np.ndarray:
+    """
+    Load a depth map from raw bytes using the provided decoder.
+    
+    :param data: Raw bytes containing the depth map.
+    :param decoder: An instance of a Decoder subclass.
+    :return: The decoded depth map as a numpy array.
+    """
+    if isinstance(decoder, str):
+        if decoder.lower() == "trvl":
+            decoder = DecoderTRVLVideo(*args, **kwargs)
+        elif decoder.lower() == "rvl":
+            decoder = DecoderRVLVideo(*args, **kwargs)
+        else:
+            raise ValueError(f"Unsupported decoder name: {decoder}")
 
-def dump(data: np.ndarray, encoder: Encoder = None, *args, **kwargs) -> None:
+    if isinstance(data, bytes):
+        data = [data]
+
+    return decoder.decode(data, *args, **kwargs)
+
+
+def dump(data: np.ndarray, encoder: Union[Encoder, str] = None, *args, **kwargs) -> None:
     """
     Save a depth map to a file using the provided encoder.
     
@@ -30,10 +58,19 @@ def dump(data: np.ndarray, encoder: Encoder = None, *args, **kwargs) -> None:
     :param file: Path to the file where the depth map will be saved.
     :param encoder: An instance of an Encoder subclass.
     """
+    if isinstance(encoder, str):
+        if encoder.lower() == "trvl":
+            frame_size = data.shape[-1] * data.shape[-2]
+            encoder = EncoderTRVLVideo(frame_size=frame_size, *args, **kwargs)
+        elif encoder.lower() == "rvl":
+            frame_size = data.shape[-1] * data.shape[-2]
+            encoder = EncoderRVLVideo(frame_size=frame_size, *args, **kwargs)
+        else:
+            raise ValueError(f"Unsupported encoder name: {encoder}")
 
     return encoder(data, *args, **kwargs)
 
-def save(data: np.ndarray, file: Union[str, Path], encoder: Encoder = None, *args, **kwargs) -> None:
+def save(data: np.ndarray, file: Union[str, Path], encoder: Union[Encoder, str] = None, *args, **kwargs) -> None:
     """
     Save a depth map to a file using the provided encoder.
     
@@ -41,6 +78,16 @@ def save(data: np.ndarray, file: Union[str, Path], encoder: Encoder = None, *arg
     :param file: Path to the file where the depth map will be saved.
     :param encoder: An instance of an Encoder subclass.
     """
+    if isinstance(encoder, str):
+        if encoder.lower() == "trvl":
+            frame_size = data.shape[-1] * data.shape[-2]
+            encoder = EncoderTRVLVideo(frame_size=frame_size, *args, **kwargs)
+        elif encoder.lower() == "rvl":
+            frame_size = data.shape[-1] * data.shape[-2]
+            encoder = EncoderRVLVideo(frame_size=frame_size, *args, **kwargs)
+        else:
+            raise ValueError(f"Unsupported encoder name: {encoder}")
+        
     Saver.save(data, file, encoder, *args, **kwargs)
 
 
@@ -60,16 +107,21 @@ class Saver:
         if Path(save_path).suffix == "":
             save_path += ".dep"
 
-        encoder = encoder or DEFAULT_ENCODER(frame_size=shape[-1] * shape[-2], *args, **kwargs)
+
+        if encoder.name == "TRVL":
+            data_encoded, keyframes = encoder.encode(data)
+        else:
+            data_encoded = encoder.encode(data)
+            keyframes = []
+
 
         # Open in binary mode
         with open(save_path, 'wb') as f:
             # Write header as ASCII, terminated by newline
-            header = f"!{shape}; {dtype}; {encoder.name}\n"
+            header = f"!{shape}; {dtype}; {encoder.name}; {keyframes}\n"
             f.write(header.encode('ascii'))
-
-            for i in range(data.shape[0]):
-                block = encoder(data[i], *args, **kwargs)  # raw bytes
+            for i in range(len(data_encoded)):
+                block = data_encoded[i]  # raw bytes
                 # First write a 4-byte big-endian length:
                 f.write(struct.pack('>I', len(block)))
                 # Then the raw compressed bytes
@@ -86,25 +138,37 @@ class Loader:
         :param decoder: An instance of a Decoder subclass.
         :return: A list of decoded depth maps as numpy arrays.
         """
+        path = Path(path)
+        if path.suffix == "":
+            path = path.with_suffix(".dep")
+        
         with open(path, 'rb') as f:
             # Read header line
             header = f.readline().decode('ascii').strip()[1:]
-            shape_str, dtype_str, enc_name = header.split('; ')
+            header_parts = header.split('; ')
+            data_add = None
+            if len(header_parts) == 3:
+                shape_str, dtype_str, enc_name = header_parts
+            elif len(header_parts) == 4:
+                shape_str, dtype_str, enc_name, data_add = header_parts
             shape = tuple(map(int, shape_str.strip("()").split(",")))
             dtype = np.dtype(dtype_str)
+
+            frame_size = shape[-2] * shape[-1]
 
             # Instantiate decoder if needed
             if decoder is None:
                 if enc_name == "TRVL":
-                    decoder = DecoderTRVL(shape[-2]*shape[-1], *args, **kwargs)
+                    decoder = DecoderTRVLVideo(shape[-2]*shape[-1], *args, **kwargs)
                 elif enc_name == "RVL":
-                    decoder = Decoder(shape[-2]*shape[-1], *args, **kwargs)
+                    decoder = DecoderRVLVideo(shape[-2]*shape[-1], *args, **kwargs)
                 else:
                     raise ValueError(f"Unsupported encoder name: {enc_name}")
             elif decoder.name != enc_name:
                 raise ValueError(f"Decoder {decoder.name} does not match encoded data ({enc_name}).")
 
             frames = []
+            frames_enc = []
             # Now read until EOF
             while True:
                 # Read 4-byte length prefix
@@ -113,9 +177,18 @@ class Loader:
                     break  # EOF
                 (block_len,) = struct.unpack('>I', length_bytes)
                 block = f.read(block_len)
-                frames.append(decoder(block, *args, **kwargs))
+                frames_enc.append(block)
 
-        arr = np.stack(frames, axis=0)
+        if enc_name == "TRVL":
+            if data_add == None:
+                keyframes = []
+            else:
+                keyframes = list(map(int, data_add.strip("[]").split(",")))
+
+            arr = decoder(frames_enc, frame_size=frame_size, keyframes=keyframes)
+        else:
+            arr = decoder(frames_enc, frame_size=frame_size)
+
         arr = np.reshape(arr, shape)
         if 'float' in dtype_str:
             arr = arr.view(np.float16)

@@ -79,7 +79,7 @@ public:
         return tmp;
     }
 
-private:
+
     std::vector<Pixel> pixels_;
     short change_threshold_;
     int invalid_threshold_;

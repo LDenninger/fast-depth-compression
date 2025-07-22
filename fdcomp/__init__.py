@@ -1,7 +1,22 @@
-# Import Python wrapper classes first
-from .fdcomp import load, dump, save
-from .encoder import Encoder, EncoderTRVL, EncoderRVL
-from .decoder import Decoder, DecoderTRVL, DecoderRVL
+# I/O Operations
+from .fdcomp import load, loads, dump, save
+# Encoder and Decoder Classes
+from .encoder import (
+    # Base Encoder classes
+    Encoder, FrameEncoder, VideoEncoder,
+    # TRVL
+    EncoderTRVL, EncoderTRVLVideo, EncoderRVLVideo,
+    # RVL
+    EncoderRVL, EncoderTRVLVideo
+)
+from .decoder import (
+    # Base Decoder classes
+    Decoder, FrameDecoder, VideoDecoder,
+    # TRVL
+    DecoderTRVL, DecoderTRVLVideo, DecoderRVLVideo,
+    # RVL
+    DecoderRVL, DecoderRVLVideo
+)
 
 # Import the compiled C++ bindings at module level
 try:
@@ -32,7 +47,7 @@ except ImportError:
 
 __all__ = [
     "load", "dump", "save",
-    "Encoder", "EncoderTRVL", "EncoderRVL",
+    "Encoder", "EncoderTRVL", "EncoderRVL", 
     "Decoder", "DecoderTRVL", "DecoderRVL",
     "CompressRVL", "DecompressRVL",
     "RVLCompress", "RVLDecompress"

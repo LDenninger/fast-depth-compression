@@ -19,6 +19,7 @@ setup(
     include_package_data=True,
     install_requires=[
         "numpy>=1.15.0",
+        "gnuplotlib"
     ],
     setup_requires=[
         "pybind11>=2.5.0",
