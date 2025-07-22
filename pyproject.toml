@@ -9,9 +9,16 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "fdcomp"
-version = "0.1.0"
-description = "Fast Depth Compression Library with TRVL and RVL algorithms"
-readme = "README.md"
+version = "0.2.0"
+authors = [
+    {name = "Luis Denninger", email = "Luis0512@web.de"}
+]
+maintainers = [
+    {name = "Luis Denninger", email = "Luis0512@web.de"}
+]
+license = "Apache-2.0"
+description = "A python library for efficient depth compression to increase throughput and minimize memory footprint"
+readme = {file = "README.md", content-type = "text/markdown"}
 requires-python = ">=3.6"
 dependencies = [
     "numpy>=1.15.0",
@@ -20,13 +27,18 @@ dependencies = [
     "matplotlib>=3.0.0",
     "opencv-python>=4.5.0",
 ]
-
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3.11",
+]
 [project.optional-dependencies]
 # keep test dependencies only for pytest
 test = [
     "pytest",
     "pytest-cov",
 ]
+
 
 [tool.scikit-build]
 cmake.verbose = true
