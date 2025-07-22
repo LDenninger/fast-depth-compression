@@ -13,11 +13,3 @@ set_target_properties(fdcomp_cpp
     PROPERTIES PUBLIC_HEADER include/trvl.h
 )
 
-#add_executable(fdcomp_example
-#    src/example.cpp
-#)
-
-#target_link_libraries(fdcomp_example
-#    ${OpenCV_LIBS}
-#    fdcomp_cpp
-#)
