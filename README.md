@@ -2,7 +2,7 @@
 
 > A high-performance Python library for **lossless depth image compression** using state-of-the-art TRVL (Temporal RVL) and RVL algorithms.
 
-[![Python](https://img.shields.io/badge/Python-3.6+-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![C++](https://img.shields.io/badge/C++-14-orange.svg)](https://en.cppreference.com/)
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.0+-green.svg)](https://opencv.org/)
 
@@ -15,6 +15,31 @@
 - **⚡ RVL Algorithm**: Wilson's Run-Length Variable compression implementation
 - **🔄 Lossless Compression**: Perfect reconstruction of depth data
 - **📦 Easy Integration**: Simple Python API for seamless workflow integration
+
+## 📚 Table of Contents
+
+| Section                                                          | Description                                  |
+| ---------------------------------------------------------------- | -------------------------------------------- |
+| [📁 **Project Structure**](#project-structure)                   | Overview of project folders and files        |
+| [⚙️ **Installation**](#installation)                              | Prerequisites & installation steps           |
+| [🚀 **Quick Start**](#quick-start)                               | Basic usage examples                         |
+| [📖 **API Reference**](#api-reference)                           | Details of encoders, decoders, utilities     |
+| [🧪 **Tests**](#tests)                                           | How to run the test suite                    |
+| [📜 **Algorithm References**](#algorithm-references)             | Citations for compression algorithms         |
+| [🤝 **Contributing**](#contributing)                             | Guidelines to contribute to the project      |
+| [📄 **License**](#license)                                       | Licensing information                        |
+
+## 📁 Project Structure
+
+```
+fast-depth-compression/
+├── 📁 backend/              # C++ implementation
+│   ├── 📁 cpp/              # Core algorithms
+│   └── 📁 bindings/         # Python bindings
+├── 📁 fdcomp/               # Python package
+├── 📁 examples/             # Usage examples
+└── 📄 README.md             # This file
+```
 
 ## 🏗️ Installation
 
@@ -142,36 +167,125 @@ print(f"Reconstruction error: {l2_error}")  # Should be 0.0
 
 ## 📖 API Reference
 
-### 🎬 TRVL Classes (Temporal Compression)
+### Base Classes
 
-| Class | Description | Parameters |
-|-------|-------------|------------|
-| `EncoderTRVL` | Temporal depth encoder | `frame_size`, `change_threshold`, `invalidation_threshold` |
-| `DecoderTRVL` | Temporal depth decoder | `frame_size` |
+#### Encoders
 
-### ⚡ RVL Functions (Single Frame Compression)
+**Class: Encoder**
+_Abstract base class for all encoders_
 
-| Function | Description | Parameters |
-|----------|-------------|------------|
-| `RVLCompress()` | Modern RVL compression | `depth_buffer: List[int]` |
-| `RVLDecompress()` | Modern RVL decompression | `compressed_data: bytes`, `num_pixels: int` |
-| `CompressRVL()` | Wilson's original RVL | `depth_buffer: List[int]` |
-| `DecompressRVL()` | Wilson's original RVL | `compressed_data: bytes`, `num_pixels: int` |
+```python
+class Encoder:
+    def __call__(self, data: np.ndarray, *args, **kwargs) -> bytes
+    def encode(self, data: np.ndarray, *args, **kwargs) -> bytes
+    def _cast_int16(self, data: np.ndarray, suppress_warnings: bool=False) -> np.ndarray
+```
 
-### 💾 File I/O Functions
+- ``__call__(data, *args, **kwargs) → bytes``
+  Invokes the encoder by forwarding to `encode()`.
+- ``encode(data, *args, **kwargs) → bytes``
+  **Abstract**: implement this in subclasses.
+- ``_cast_int16(data, suppress_warnings=False) → np.ndarray``
+  Casts input array to int16, with optional warnings.
 
-| Function | Description | Parameters |
-|----------|-------------|------------|
-| `save()` | Save depth array to file | `data: np.ndarray`, `filename: str` |
-| `load()` | Load depth array from file | `filename: str` |
-| `dump()` | Serialize depth data | `data: np.ndarray` |
+**Class: FrameEncoder**
+_Inherits from Encoder; validates single-frame (2D) inputs_
+
+```python
+class FrameEncoder(Encoder):
+    def encode(self, data: np.ndarray, *args, **kwargs) -> bytes
+```
+
+- **encode(data, *args, **kwargs) → bytes**
+  Ensures `data.ndim == 2` before encoding.
+
+**Class: VideoEncoder**
+_Inherits from Encoder; wraps a FrameEncoder for multi-frame support_
+
+```python
+class VideoEncoder(Encoder):
+    def __init__(self, frame_encoder: FrameEncoder = None)
+    def encode(self, data: np.ndarray, *args, **kwargs) -> List[bytes]
+```
+
+- ``__init__(frame_encoder: FrameEncoder = None)``
+  Optionally accepts a `FrameEncoder` instance.
+- ``encode(data, *args, **kwargs) → List[bytes]``
+  Handles 2D or 3D arrays, delegating per-frame encoding to `frame_encoder`.
+
+#### Decoders
+
+**Class: Decoder**
+_Abstract base class for all decoders_
+
+```python
+class Decoder:
+    def __call__(self, data: bytes or List[bytes], frame_size: int = None, *args, **kwargs) -> np.ndarray
+    def decode(self, data: bytes or List[bytes], *args, **kwargs) -> np.ndarray
+```
+
+- ``__call__(data, frame_size=None, *args, **kwargs) → np.ndarray``
+  Initializes `frame_size` and delegates to `decode()`.
+- ``decode(data, *args, **kwargs) → np.ndarray``
+  **Abstract**: implement this in subclasses.
+
+**Class: FrameDecoder**
+_Inherits from Decoder; validates single-frame (bytes) inputs_
+
+```python
+class FrameDecoder(Decoder):
+    def decode(self, data: bytes, *args, **kwargs) -> np.ndarray
+```
+
+- ``decode(data, *args, **kwargs) → np.ndarray``
+  Ensures per-frame decoding logic is applied correctly.
+
+**Class: VideoDecoder**
+_Inherits from Decoder; wraps a FrameDecoder for multi-frame support_
+
+```python
+class VideoDecoder(Decoder):
+    def __init__(self, frame_decoder: FrameDecoder = None)
+    def decode(self, data: List[bytes], *args, **kwargs) -> List[np.ndarray]
+```
+
+- ``__init__(frame_decoder: FrameDecoder = None)``
+  Optionally accepts a `FrameDecoder` instance.
+- ``decode(data, *args, **kwargs) → List[np.ndarray]``
+  Decodes each frame via `frame_decoder` and returns a list of arrays.
+
+### Algorithm Implementations
+
+#### TRVL
+| Class                  | Description                                    | Key Params                                      |
+|------------------------|------------------------------------------------|-------------------------------------------------|
+| `EncoderTRVL`          | Frame-level temporal RVL encoder               | `frame_size`, `change_threshold`, `invalidation_threshold` |
+| `EncoderTRVLVideo`     | Video encoder with keyframe interval           | `frame_size`, `keyframe_interval`, ...          |
+| `DecoderTRVL`          | Frame-level temporal RVL decoder               | `frame_size`                                    |
+| `DecoderTRVLVideo`     | Video decoder handling keyframes               | `frame_size`, `keyframes`                       |
+
+#### RVL
+| Class                  | Description                                    | Key Params                                      |
+|------------------------|------------------------------------------------|-------------------------------------------------|
+| `EncoderRVL`           | Frame-level RVL encoder                        | `frame_size`                                    |
+| `EncoderRVLVideo`      | Video RVL encoder                              | `frame_size`                                    |
+| `DecoderRVL`           | Frame-level RVL decoder                        | `frame_size`                                    |
+| `DecoderRVLVideo`      | Video RVL decoder                              | `frame_size`                                    |
+
+### File I/O Utilities
+
+- **save(data: np.ndarray, filename: str, encoder: Union[str, Encoder])**
+- **load(filename: str, decoder: Union[str, Decoder]) → np.ndarray**
+- **loads(data: Union[bytes, List[bytes]], decoder: Union[str, Decoder]) → np.ndarray**
+- **dump(data: np.ndarray, encoder: Union[str, Encoder]) → bytes**
 
 ## 🧪 Tests
 
 Unit tests cover all core algorithms and I/O functions, ensuring lossless compression across both TRVL and RVL implementations.
 
-- **test_trvl.py**: Verify TRVL temporal encoder/decoder round-trip on random depth frames.
-- **test_rvl.py**: Verify RVL single-frame encoder/decoder on random integer depth buffers.
+- **test_trvl.py**: Verify TRVL emporal encoder/decoder frame-wise and for videos.
+- **test_rvl.py**: Verify RVL emporal encoder/decoder frame-wise and for videos.
+- **test_io.py**: Verify I/O operations for TRVL and RVL algorithms.
 
 To run all tests:
 
@@ -181,20 +295,10 @@ pytest -q --disable-warnings --maxfail=1
 
 To run separate test with outputs:
 ```bash
-python tests/test_trvl.py
+python tests/test_trvl.py 
 ```
 
-### Project Structure
 
-```
-fast-depth-compression/
-├── 📁 backend/              # C++ implementation
-│   ├── 📁 cpp/              # Core algorithms
-│   └── 📁 bindings/         # Python bindings
-├── 📁 fdcomp/               # Python package
-├── 📁 examples/             # Usage examples
-└── 📄 README.md             # This file
-```
 
 ## 🏆 Performance
 
@@ -217,7 +321,9 @@ I welcome any contributions or algorithm requests for depth compression. Provide
 
 ## 📄 License
 
-This projects is licensed under the **BSD-3** license.
+Parts of this project (`./backend/cpp/include/rvl.h`, `./backend/cpp/include/trvl.h`) are licensed under Apache 2.0, taken from [https://github.com/hanseuljun/temporal-rvl/tree/master].(https://github.com/hanseuljun/temporal-rvl/tree/master)
+
+All other parts are licensed under the **Apache 2.0** license.
 
 
 

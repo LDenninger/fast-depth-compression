@@ -12,8 +12,20 @@ def _get_bindings():
 
 _EncoderTRVL, RVLCompress = _get_bindings()
 
+############################################
+############### Base Classes ###############
+############################################
+
 class Encoder:
+    """
+        Base class for all encoders.
+        Implemented encoders should inherit from either the subclasses FrameEncoder or VideoEncoder.
+    
+    """
     def __call__(self, data: np.ndarray, *args, **kwargs) -> bytes:
+        """ 
+            Calls the encoding function.
+        """
         return self.encode(data, *args, **kwargs)
 
     def encode(self, data: np.ndarray, *args, **kwargs) -> bytes:
@@ -24,7 +36,7 @@ class Encoder:
 
     def _cast_int16(self, data: np.ndarray, suppress_warnings: bool = False) -> np.ndarray:
         """
-        Casts the input data to int16 if it is of type float16.
+            Casts the input data to int16 if it is of type float16.
         """
         if data.dtype == np.float16:
             if not suppress_warnings: print(colored("Warning: ", "yellow"), "Automatically converting float16 to int16 for encoding.")
@@ -38,6 +50,11 @@ class Encoder:
         return data
     
 class FrameEncoder(Encoder):
+    """
+        FrameEncoder base class.
+        This encoders encode single frames of depth data.
+        Implemented encoders implement the encode() method.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -48,6 +65,17 @@ class FrameEncoder(Encoder):
         return super().encode(data, *args, **kwargs)
 
 class VideoEncoder(Encoder):
+    """
+        VideoEncoder base class.
+        This encoders encode sequences of frames (videos) of depth data.
+        Implemented encoders implement the encode() method.
+
+        Arguments:
+        - frame_encoder: An instance of FrameEncoder to encode individual frames.
+                         This should only be used if the VideoEncoder is used as a wrapper for a FrameEncoder.
+    """
+
+
     def __init__(self, 
                   frame_encoder:FrameEncoder = None,
                   *args, **kwargs):
@@ -56,6 +84,10 @@ class VideoEncoder(Encoder):
         super().__init__(*args, **kwargs)
 
     def encode(self, data, *args, **kwargs):
+        """
+            Encoding function that serves as a wrapper for the FrameEncoder.
+            If the VideoEncoder serves as a base class, overwrite this method in the subclass.
+        """
         if data.ndim == 2:
             data = data[np.newaxis, ...] 
 
@@ -70,10 +102,23 @@ class VideoEncoder(Encoder):
             
             return compressed_data
         
-        return super().encode(data, *args, **kwargs)
+        raise NotImplementedError("Subclasses should implement the encode() method.")
     
-    
+############################################
+########## Implemented Encoders ############
+############################################    
+
+
+############## TRVL Encoder ################
+
 class EncoderTRVL(FrameEncoder):
+    """
+        Frame encoder for the temporal RVL encoding.
+
+        Reference: https://github.com/hanseuljun/temporal-rvl
+        C++ binding: ./backend/cpp/include/trvl.h
+    
+    """
     name: str = "TRVL"
     def __init__(self, 
                 frame_size: int,
@@ -98,8 +143,11 @@ class EncoderTRVL(FrameEncoder):
         return data_compressed
     
 class EncoderTRVLVideo(VideoEncoder):
+    """
+        Video encoder for the temporal RVL encoding.
+        Wraps the corresponding frame encoder for sequeunces of depth frames.
+    """
     name: str = "TRVL"
-
     def __init__(self, 
                 frame_size: int,
                 change_threshold:int = 10,
@@ -129,11 +177,18 @@ class EncoderTRVLVideo(VideoEncoder):
             compressed_data.append(compressed_frame)
         
         return compressed_data, keyframes
-    
+
+############### RVL Encoder ################
     
 class EncoderRVL(FrameEncoder):
+    """
+        Frame encoder for the RVL encoding.
+        
+        
+        Reference: https://github.com/hanseuljun/temporal-rvl
+        C++ binding: ./backend/cpp/include/rvl.h
+    """
     name: str = "RVL"
-
     def __init__(self, frame_size: int, suppress_warnings: bool = False, *args, **kwargs):
         self.frame_size = frame_size
         self.suppress_warnings = suppress_warnings
