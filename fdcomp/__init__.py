@@ -1,5 +1,5 @@
 # I/O Operations
-from .fdcomp import load, loads, dump, save
+from .fdcomp import load, loads, dump, save, inspect
 # Encoder and Decoder Classes
 from .encoder import (
     # Base Encoder classes
@@ -50,9 +50,9 @@ except ImportError:
     _bindings_available = False
 
 __all__ = [
-    "load", "dump", "save",
-    "Encoder", "EncoderTRVL", "EncoderRVL", 
-    "Decoder", "DecoderTRVL", "DecoderRVL",
+    "load", "dump", "save", "loads", "inspect",
+    "Encoder", "FrameEncoder", "VideoEncoder", "EncoderTRVL", "EncoderRVL",
+    "Decoder", "FrameDecoder", "VideoDecoder", "DecoderTRVL", "DecoderRVL",
     "CompressRVL", "DecompressRVL",
     "RVLCompress", "RVLDecompress"
 ]
