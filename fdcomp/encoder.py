@@ -38,7 +38,7 @@ class Encoder:
         """
         raise NotImplementedError("Subclasses should implement the encode() method.")
 
-    def _cast_int16(self, data: np.ndarray, suppress_warnings: bool = False) -> np.ndarray:
+    def _cast_int16(self, data: np.ndarray, suppress_warnings: bool = True) -> np.ndarray:
         """
             Casts the input data to int16 if it is of type float16.
         """
@@ -165,7 +165,7 @@ class EncoderTRVL(FrameEncoder):
                 frame_size: int,
                 change_threshold:int = 10,
                 invalidation_threshold: int = 2,
-                suppress_warnings: bool = False, *args, **kwargs
+                suppress_warnings: bool = True, *args, **kwargs
                 ):
         self.frame_size = frame_size
         self.change_threshold = change_threshold
@@ -194,7 +194,7 @@ class EncoderTRVLVideo(VideoEncoder):
                 change_threshold:int = 10,
                 invalidation_threshold: int = 2,
                 keyframe_interval: int = 10,
-                suppress_warnings: bool = False, *args, **kwargs
+                suppress_warnings: bool = True, *args, **kwargs
                 ):
         self.keyframe_interval = keyframe_interval
         self.suppress_warnings = suppress_warnings
@@ -229,7 +229,7 @@ class EncoderRVL(FrameEncoder):
         C++ binding: ./backend/cpp/include/rvl.h
     """
     name: str = "RVL"
-    def __init__(self, frame_size: int, suppress_warnings: bool = False, *args, **kwargs):
+    def __init__(self, frame_size: int, suppress_warnings: bool = True, *args, **kwargs):
         self.frame_size = frame_size
         self.suppress_warnings = suppress_warnings
 
@@ -244,7 +244,7 @@ class EncoderRVL(FrameEncoder):
 class EncoderRVLVideo(VideoEncoder):
     name: str = "RVL"
 
-    def __init__(self, frame_size: int, suppress_warnings: bool = False, *args, **kwargs):
+    def __init__(self, frame_size: int, suppress_warnings: bool = True, *args, **kwargs):
         self.suppress_warnings = suppress_warnings
         frame_encoder = EncoderRVL(frame_size, suppress_warnings=False)
         super().__init__(frame_encoder=frame_encoder)
