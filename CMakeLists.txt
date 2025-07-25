@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find required packages
-find_package(OpenCV REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
@@ -17,10 +16,8 @@ add_library(fdcomp_cpp STATIC
 
 target_include_directories(fdcomp_cpp
     PUBLIC backend/cpp/include
-    ${OpenCV_INCLUDE_DIRS}
 )
 
-target_link_libraries(fdcomp_cpp PUBLIC ${OpenCV_LIBS})
 
 # Build the pybind11 extension
 pybind11_add_module(fdc_bindings

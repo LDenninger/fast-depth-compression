@@ -9,7 +9,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "fdcomp"
-version = "0.2.0"
+version = "0.2.1"
 authors = [
     {name = "Luis Denninger", email = "Luis0512@web.de"}
 ]
@@ -25,7 +25,6 @@ dependencies = [
     "termcolor>=1.1.0",
     "gnuplotlib>=0.31.0",
     "matplotlib>=3.0.0",
-    "opencv-python>=4.5.0",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
