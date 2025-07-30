@@ -18,7 +18,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libopencv-dev gnuplot
+          sudo apt-get install -y gnuplot
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install .        # now your package can link against libopencv
+          pip install .        
           pip install pytest
 
       - name: Run tests
