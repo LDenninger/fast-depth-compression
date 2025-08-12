@@ -23,6 +23,7 @@ __all__ = [
 ################### Base Classes ######################
 #######################################################
 class Encoder:
+    name: str = "EncoderBase"
     def __init__(
         self,
         suppress_warnings: bool = True,
@@ -106,6 +107,7 @@ class FrameEncoder(Encoder, fb.FrameEncoder):
     """
     Base frame encoder binding wrapper.
     """
+    name: str = "FrameEncoderBase"
     def __init__(self, frame_size: int, suppress_warnings: bool = True):
         # call C++ binding init first
         fb.FrameEncoder.__init__(self, frame_size)
@@ -116,6 +118,7 @@ class VideoEncoder(Encoder, fb.VideoEncoder):
     """
     Base video encoder binding wrapper.
     """
+    name: str = "VideoEncoderBase"
     def __init__(self, frame_encoder: FrameEncoder, suppress_warnings: bool = True):
         fb.VideoEncoder.__init__(self, frame_encoder)
         Encoder.__init__(self, suppress_warnings, fb.VideoEncoder.encode.__get__(self, fb.VideoEncoder))
@@ -168,6 +171,7 @@ class EncoderTRVL(Encoder, fb.EncoderTRVL):
     """
     TRVL frame encoder wrapping the C++ binding.
     """
+    name: str = "TRVL"
     def __init__(self,
                  frame_size: int,
                  change_threshold: int = 10,
@@ -180,6 +184,7 @@ class EncoderTRVLVideo(Encoder, fb.VideoEncoderTRVL):
     """
     TRVL video encoder wrapping the C++ binding.
     """
+    name: str = "TRVL"
     def __init__(self,
                  frame_size: int,
                  keyframe_interval: int = 10,
@@ -218,6 +223,7 @@ class EncoderRVL(Encoder, fb.EncoderRVL):
     """
     RVL frame encoder wrapping the C++ binding.
     """
+    name: str = "RVL"
     def __init__(self, frame_size: int, suppress_warnings: bool = True):
         fb.EncoderRVL.__init__(self, frame_size)
         Encoder.__init__(self, suppress_warnings, fb.EncoderRVL.encode.__get__(self, fb.EncoderRVL))
@@ -226,6 +232,7 @@ class EncoderRVLVideo(Encoder, fb.VideoEncoderRVL):
     """
     RVL video encoder wrapping the C++ binding.
     """
+    name: str = "RVL"
     def __init__(self, frame_size: int, suppress_warnings: bool = True):
         self.frame_size = frame_size
         fb.VideoEncoderRVL.__init__(self, frame_size)

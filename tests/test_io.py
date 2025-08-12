@@ -139,7 +139,7 @@ def test_dumping(path: str = './examples/depth.npz'):
 
     print(colored("\nTest: Dumping using TRVL encoder.", "blue"))
     try:
-        data_trvl, keyframes = fdcomp.dump(depth, 'trvl')
+        data_trvl = fdcomp.dump(depth, 'trvl')
         print(colored("SUCCESS: ", 'green'), 'Data dumped successfully using TRVL encoder.')
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while dumping data:\n{e}')
@@ -166,8 +166,8 @@ def test_dumping(path: str = './examples/depth.npz'):
 
     print(colored("\nTest: Loading from TRVL dump.", "blue"))
     try:
-        data_trvl_dec = fdcomp.loads(data_trvl, 'trvl', keyframes=keyframes, frame_size=frame_size)
-        data_trvl_dec = data_trvl_dec.view(np.float16).reshape(depth.shape)
+        data_trvl_dec = fdcomp.loads(data_trvl, 'trvl', frame_size=frame_size, output_size=depth.shape[-2:], dtype=np.float32)
+        #data_trvl_dec = data_trvl_dec.view(np.float16).reshape(depth.shape)
         print(colored("SUCCESS: ", 'green'), 'Data decoded successfully from TRVL dump.')
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while decoding TRVL dump:\n{e}')
@@ -176,8 +176,8 @@ def test_dumping(path: str = './examples/depth.npz'):
 
     print(colored("\nTest: Loading from RVL dump.", "blue"))
     try:
-        data_rvl_dec = fdcomp.loads(data_rvl, 'rvl', frame_size=frame_size)
-        data_rvl_dec = data_rvl_dec.view(np.float16).reshape(depth.shape)
+        data_rvl_dec = fdcomp.loads(data_rvl, 'rvl', frame_size=frame_size, output_size=depth.shape[-2:], dtype=np.float32)
+        #data_rvl_dec = data_rvl_dec.view(np.float16).reshape(depth.shape)
         print(colored("SUCCESS: ", 'green'), 'Data decoded successfully from RVL dump.')
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while decoding RVL dump:\n{e}')

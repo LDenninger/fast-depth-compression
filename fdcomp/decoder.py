@@ -21,6 +21,7 @@ __all__ = [
 ################### Base Classes ######################
 #######################################################
 class Decoder:
+    name: str = "DecoderBase"
     def __init__(self, suppress_warnings: bool = True, decode_fn=None):
         self.suppress_warnings = suppress_warnings
         self._decode_fn = decode_fn
@@ -28,7 +29,8 @@ class Decoder:
     def decode(
         self,
         data: Union[bytes, List[bytes]],
-        frame_size: Tuple[int, int] = None,
+        output_size: Tuple[int, int] = None,
+        dtype = np.int16,
         verbose: bool = False,
         *args, **kwargs
     ) -> np.ndarray:
@@ -38,7 +40,7 @@ class Decoder:
                 "('decode_fn' argument in constructor) or reimplement decode()."
             )
         if verbose:
-            return self._decode_verbose(data, frame_size, *args, **kwargs)
+            return self._decode_verbose(data, output_size, *args, **kwargs)
 
         data_uncompressed = self._decode_fn(data, *args, **kwargs)
 
@@ -50,14 +52,21 @@ class Decoder:
         else:
             arr = np.asarray(data_uncompressed, dtype=np.int16)
 
-        if frame_size is not None:
+        if dtype == np.float16:
+            arr = arr.view(np.float16)
+        elif dtype == np.float32:
+            arr = arr.view(np.float16).astype(np.float32)
+        else:
+            arr = arr.astype(dtype)
+
+        if output_size is not None:
             if arr.ndim == 1:
-                arr = arr.reshape(*frame_size)
-            elif arr.ndim == 2 and np.prod(frame_size, dtype=np.int64) == arr.shape[1]:
+                arr = arr.reshape(*output_size)
+            elif arr.ndim == 2 and np.prod(output_size) == arr.shape[1]:
                 # already (frames, elems_per_frame); leave as-is or reshape to (frames, H, W)
-                arr = arr.reshape(-1, *frame_size)
+                arr = arr.reshape(-1, *output_size)
             else:
-                arr = arr.reshape(-1, *frame_size)
+                arr = arr.reshape(-1, *output_size)
 
         # arr is int16; NaN check is unnecessary (integers cannot be NaN).
         return arr
@@ -65,7 +74,7 @@ class Decoder:
     def _decode_verbose(
         self,
         data: Union[bytes, List[bytes]],
-        frame_size: Tuple[int, int] = None,
+        output_size: Tuple[int, int] = None,
         *args, **kwargs
     ) -> np.ndarray:
         if self._decode_fn is None:
@@ -89,13 +98,13 @@ class Decoder:
         end_time = time.perf_counter()
         print(f"Conversion time: {(end_time - start_time) * 1000:.2f} ms")
 
-        if frame_size is not None:
+        if output_size is not None:
             if arr.ndim == 1:
-                arr = arr.reshape(*frame_size)
-            elif arr.ndim == 2 and np.prod(frame_size, dtype=np.int64) == arr.shape[1]:
-                arr = arr.reshape(-1, *frame_size)
+                arr = arr.reshape(*output_size)
+            elif arr.ndim == 2 and np.prod(output_size, dtype=np.int64) == arr.shape[1]:
+                arr = arr.reshape(-1, *output_size)
             else:
-                arr = arr.reshape(-1, *frame_size)
+                arr = arr.reshape(-1, *output_size)
 
         return arr
 
@@ -119,6 +128,7 @@ class FrameDecoder(Decoder, fb.FrameDecoder):
     """
     Base frame decoder binding wrapper.
     """
+    name: str = "FrameDecoderBase"
     def __init__(self, frame_size: int, suppress_warnings: bool = True):
         fb.FrameDecoder.__init__(self, frame_size)
         Decoder.__init__(self, suppress_warnings, fb.FrameDecoder.decode.__get__(self, fb.FrameDecoder))
@@ -127,6 +137,7 @@ class VideoDecoder(Decoder, fb.VideoDecoder):
     """
     Base video decoder binding wrapper.
     """
+    name: str = "VideoDecoderBase"
     def __init__(self, frame_decoder: FrameDecoder, suppress_warnings: bool = True):
         fb.VideoDecoder.__init__(self, frame_decoder)
         Decoder.__init__(self, suppress_warnings, fb.VideoDecoder.decode.__get__(self, fb.VideoDecoder))
@@ -156,7 +167,7 @@ class DecoderRawVideo(Decoder):
     def __init__(self, suppress_warnings: bool = True):
         Decoder.__init__(self, suppress_warnings)
         self.frame_decoder = DecoderRaw(suppress_warnings)
-    def decode(self, data: List[bytes]) -> np.ndarray:
+    def decode(self, data: List[bytes], *args, **kwargs) -> np.ndarray:
         frames = [self.frame_decoder.decode(b) for b in data]
         return np.stack(frames, axis=0)
 
@@ -167,6 +178,7 @@ class DecoderTRVL(Decoder, fb.DecoderTRVL):
     """
     TRVL frame decoder wrapping the C++ binding.
     """
+    name: str = "TRVL"
     def __init__(self, frame_size: int, suppress_warnings: bool = True):
         fb.DecoderTRVL.__init__(self, frame_size)
         Decoder.__init__(self, suppress_warnings, fb.DecoderTRVL.decode.__get__(self, fb.DecoderTRVL))
@@ -175,9 +187,10 @@ class DecoderTRVLVideo(Decoder, fb.VideoDecoderTRVL):
     """
     TRVL video decoder wrapping the C++ binding.
     """
+    name: str = "TRVL"
     def __init__(self,
-                 frame_size: int,
-                 keyframe_interval: int = 20,
+                 frame_size: int = 0,
+                 keyframe_interval: int = 10,
                  suppress_warnings: bool = True):
         # Validate keyframe_interval to prevent division by zero
         if keyframe_interval <= 0:
@@ -196,6 +209,7 @@ class DecoderRVL(Decoder, fb.DecoderRVL):
     """
     RVL frame decoder wrapping the C++ binding.
     """
+    name: str = "RVL"
     def __init__(self, frame_size: int, suppress_warnings: bool = True):
         fb.DecoderRVL.__init__(self, frame_size)
         Decoder.__init__(self, suppress_warnings, fb.DecoderRVL.decode.__get__(self, fb.DecoderRVL))
@@ -204,7 +218,8 @@ class DecoderRVLVideo(Decoder, fb.VideoDecoderRVL):
     """
     RVL video decoder wrapping the optimized C++ binding that returns a NumPy array[int16].
     """
-    def __init__(self, frame_size: int, suppress_warnings: bool = True):
+    name: str = "RVL"
+    def __init__(self, frame_size: int = 0, suppress_warnings: bool = True):
         fb.VideoDecoderRVL.__init__(self, frame_size)
         Decoder.__init__(self, suppress_warnings, fb.VideoDecoderRVL.decode.__get__(self, fb.VideoDecoderRVL))
 

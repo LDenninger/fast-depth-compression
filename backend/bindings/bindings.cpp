@@ -236,9 +236,9 @@ PYBIND11_MODULE(fdc_bindings, m) {
                 // Always return a NumPy array:
                 // - uniform frame sizes  -> 2D array (frames, elems_per_frame)
                 // - non-uniform sizes    -> concatenated 1D array
-                if (frames_vec.empty()) {
-                    return py::array(py::dtype::of<int16_t>(), {0});  // empty 1D
-                }
+                //if (frames_vec.empty()) {
+                //    return py::array(py::dtype::of<int16_t>(), {0});  // empty 1D
+                //}
 
                 const size_t per = frames_vec.front().size();
                 const bool uniform = std::all_of(
@@ -446,7 +446,56 @@ PYBIND11_MODULE(fdc_bindings, m) {
     py::class_<trvl::VideoDecoderTRVL>(m, "VideoDecoderTRVL")
         .def(py::init<int, int>(),
              py::arg("keyframe_interval"),
-             py::arg("frame_size"))
+             py::arg("frame_size") = 0)
+        .def("decode",
+            [](trvl::VideoDecoderTRVL &self, py::sequence frames_bytes, int frame_size) -> py::array {
+                self.setFrameSize(frame_size);
+                std::vector<py::bytes> keepalive;
+                std::vector<char *> ptrs;
+                bytes_sequence_to_ptrs_with_keepalive(frames_bytes, keepalive, ptrs);
+
+                auto frames_vec = self.decode(ptrs);  // backend signature unchanged
+
+                const size_t per = frames_vec.empty() ? 0 : frames_vec.front().size();
+                const bool uniform = !frames_vec.empty() && std::all_of(
+                    frames_vec.begin(), frames_vec.end(),
+                    [per](const std::vector<short> &v) { return v.size() == per; });
+
+                //if (frames_vec.empty()) {
+                //    // Return an empty 1D int16 array
+                //    return py::array(py::dtype::of<int16_t>(), {0});
+                //}
+
+                if (uniform) {
+                    // Pack into a single 2D NumPy array (int16)
+                    const size_t frames = frames_vec.size();
+                    std::vector<int16_t> flat;
+                    flat.resize(frames * per);
+                    for (size_t i = 0; i < frames; ++i) {
+                        std::memcpy(flat.data() + i * per,
+                                    frames_vec[i].data(),
+                                    per * sizeof(int16_t));
+                    }
+                    return numpy_from_owned_vector_2d(std::move(flat),
+                                                      static_cast<ssize_t>(frames),
+                                                      static_cast<ssize_t>(per));
+                } else {
+                    // Fallback: concatenate all frames into one large 1D array (int16)
+                    size_t total = 0;
+                    for (const auto &v : frames_vec) total += v.size();
+
+                    std::vector<int16_t> flat;
+                    flat.resize(total);
+
+                    size_t offset = 0;
+                    for (const auto &v : frames_vec) {
+                        const size_t bytes = v.size() * sizeof(int16_t);
+                        std::memcpy(flat.data() + offset, v.data(), bytes);
+                        offset += v.size();
+                    }
+                    return numpy_from_owned_vector_1d(std::move(flat));
+                }
+            }, py::arg("frames_bytes"), py::arg("frame_size"))
         .def("decode",
             [](trvl::VideoDecoderTRVL &self, py::sequence frames_bytes) -> py::array {
                 std::vector<py::bytes> keepalive;
@@ -460,10 +509,10 @@ PYBIND11_MODULE(fdc_bindings, m) {
                     frames_vec.begin(), frames_vec.end(),
                     [per](const std::vector<short> &v) { return v.size() == per; });
 
-                if (frames_vec.empty()) {
-                    // Return an empty 1D int16 array
-                    return py::array(py::dtype::of<int16_t>(), {0});
-                }
+                //if (frames_vec.empty()) {
+                //    // Return an empty 1D int16 array
+                //    return py::array(py::dtype::of<int16_t>(), {0});
+                //}
 
                 if (uniform) {
                     // Pack into a single 2D NumPy array (int16)
@@ -625,7 +674,27 @@ PYBIND11_MODULE(fdc_bindings, m) {
 
     // ===== RVL Video Decoder (optimized flat return when available) =====
     py::class_<VideoDecoderRVL>(m, "VideoDecoderRVL")
-        .def(py::init<int>(), py::arg("frame_size"))
+        .def(py::init<int>(), py::arg("frame_size") = 0)
+        .def("decode",
+            [](VideoDecoderRVL &self, py::sequence frames_bytes, int frame_size) -> py::array {
+                self.setFrameSize(frame_size);
+                const ssize_t n = py::len(frames_bytes);
+                if (n == 0) {
+                    return py::array(py::dtype::of<int16_t>(), {0, 0});
+                }
+
+                std::vector<py::bytes> keepalive;
+                std::vector<char *> ptrs;
+                bytes_sequence_to_ptrs_with_keepalive(frames_bytes, keepalive, ptrs);
+
+                int elems_per_frame = 0;
+                std::vector<int16_t> flat = self.decode_flat(ptrs, elems_per_frame);
+
+                const ssize_t frames = n;
+                const ssize_t per = elems_per_frame;
+
+                return numpy_from_owned_vector_2d(std::move(flat), frames, per);
+            }, py::arg("frames_bytes"), py::arg("frame_size"))
         .def("decode",
              [](VideoDecoderRVL &self, py::sequence frames_bytes) -> py::array {
                  const ssize_t n = py::len(frames_bytes);
@@ -637,11 +706,8 @@ PYBIND11_MODULE(fdc_bindings, m) {
                  std::vector<char *> ptrs;
                  bytes_sequence_to_ptrs_with_keepalive(frames_bytes, keepalive, ptrs);
 
-                 // Prefer the contiguous backend if your C++ class implements it (signature unchanged for backend calls)
                  int elems_per_frame = 0;
                  std::vector<int16_t> flat = self.decode_flat(ptrs, elems_per_frame);
-                 // If decode_flat is not available in your C++ build, replace the line above with:
-                 // auto frames_vec = self.decode(ptrs);  // and then flatten here like the generic VideoDecoder path
 
                  const ssize_t frames = n;
                  const ssize_t per = elems_per_frame;

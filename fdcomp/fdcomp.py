@@ -1,11 +1,11 @@
-from typing import List, Literal, Union
+from typing import List, Literal, Union, Tuple
 from pathlib import Path
 from abc import abstractmethod
 import numpy as np
 import struct
 
-from .encoder import Encoder, FrameEncoder, VideoEncoder, EncoderTRVL, EncoderTRVLVideo, EncoderRVLVideo
-from .decoder import Decoder, FrameDecoder, VideoDecoder, DecoderTRVL, DecoderTRVLVideo, DecoderRVLVideo
+from .encoder import Encoder, FrameEncoder, VideoEncoder, EncoderTRVL, EncoderTRVLVideo, EncoderRVLVideo, EncoderRawVideo
+from .decoder import Decoder, FrameDecoder, VideoDecoder, DecoderTRVL, DecoderTRVLVideo, DecoderRVLVideo, DecoderRawVideo
 
 DEFAULT_FRAME_ENCODER = EncoderTRVL
 DEFAULT_VIDEO_ENCODER = EncoderTRVLVideo
@@ -105,13 +105,16 @@ def load(file: Union[str, Path],
             decoder = DecoderTRVLVideo(*args, **kwargs)
         elif decoder.lower() == "rvl":
             decoder = DecoderRVLVideo(*args, **kwargs)
+        elif decoder.lower() == "raw":
+            decoder = DecoderRawVideo(*args, **kwargs)
         else:
             raise ValueError(f"Unsupported decoder name: {decoder}")
-
-    return Loader.load(file, decoder, return_meta, *args, **kwargs)
+    out = Loader.load(file, decoder, return_meta, *args, **kwargs)
+    return out
 
 def loads(data: Union[bytes, List[bytes]], 
           decoder: Union[Decoder, Literal['trvl', 'rvl', 'raw']] = None, 
+          output_size: Tuple[int,int] = None, dtype = np.int16,
           *args, **kwargs) -> np.ndarray:
     """
     Load a depth map from raw bytes using the provided decoder.
@@ -122,16 +125,22 @@ def loads(data: Union[bytes, List[bytes]],
     """
     if isinstance(decoder, str):
         if decoder.lower() == "trvl":
+            if 'frame_size' not in kwargs:
+                raise ValueError("When using TRVL or RVL encoder, it is required to pass the 'frame_size' arguments to loads()")
             decoder = DecoderTRVLVideo(*args, **kwargs)
         elif decoder.lower() == "rvl":
+            if 'frame_size' not in kwargs:
+                raise ValueError("When using RVL or TRVL encoder, it is required to pass the 'frame_size' arguments to loads()")
             decoder = DecoderRVLVideo(*args, **kwargs)
+        elif decoder.lower() == "raw":
+            decoder = DecoderRawVideo(*args, **kwargs)
         else:
             raise ValueError(f"Unsupported decoder name: {decoder}")
 
     if isinstance(data, bytes):
         data = [data]
 
-    return decoder.decode(data, *args, **kwargs)
+    return decoder.decode(data, output_size=output_size, dtype=dtype)
 
 
 def dump(data: np.ndarray, 
@@ -151,10 +160,12 @@ def dump(data: np.ndarray,
         elif encoder.lower() == "rvl":
             frame_size = data.shape[-1] * data.shape[-2]
             encoder = EncoderRVLVideo(frame_size=frame_size, *args, **kwargs)
+        elif encoder.lower() == "raw":
+            encoder = EncoderRawVideo(*args, **kwargs)
         else:
             raise ValueError(f"Unsupported encoder name: {encoder}")
 
-    return encoder(data, *args, **kwargs)
+    return encoder.encode(data, *args, **kwargs)
 
 def save(data: np.ndarray, 
          file: Union[str, Path] = None, 
@@ -184,6 +195,8 @@ def save(data: np.ndarray,
         elif encoder.lower() == "rvl":
             frame_size = data.shape[-1] * data.shape[-2]
             encoder = EncoderRVLVideo(frame_size=frame_size, *args, **kwargs)
+        elif encoder.lower() == "raw":
+            encoder = EncoderRawVideo(*args, **kwargs)
         else:
             raise ValueError(f"Unsupported encoder name: {encoder}")
         
@@ -210,11 +223,9 @@ class Saver:
             save_path = save_path.with_suffix(".dep")
 
 
-        if encoder.name == "TRVL":
-            data_encoded, keyframes = encoder.encode(data)
-        else:
-            data_encoded = encoder.encode(data)
-            keyframes = []
+
+        data_encoded = encoder.encode(data)
+        keyframes = []
 
 
         # Open in binary mode
@@ -268,6 +279,8 @@ class Loader:
                     decoder = DecoderTRVLVideo(shape[-2]*shape[-1], *args, **kwargs)
                 elif enc_name == "RVL":
                     decoder = DecoderRVLVideo(shape[-2]*shape[-1], *args, **kwargs)
+                elif enc_name == "raw":
+                    decoder = DecoderRawVideo(*args, **kwargs)
                 else:
                     raise ValueError(f"Unsupported encoder name: {enc_name}")
             elif decoder.name != enc_name:
@@ -286,18 +299,19 @@ class Loader:
                 frames_enc.append(block)
 
         if enc_name == "TRVL":
-            if data_add == None:
+            if data_add == None or data_add.strip("[]") == "":
                 keyframes = []
+                arr = decoder.decode(frames_enc, frame_size=frame_size)
             else:
                 keyframes = list(map(int, data_add.strip("[]").split(",")))
-
-            arr = decoder(frames_enc, frame_size=frame_size, keyframes=keyframes)
+                arr = decoder.decode(frames_enc, frame_size=frame_size, keyframes=keyframes)
         else:
-            arr = decoder(frames_enc, frame_size=frame_size)
+            arr = decoder.decode(frames_enc, frame_size=frame_size)
 
         arr = np.reshape(arr, shape)
         if 'float' in dtype_str:
             arr = arr.view(np.float16)
 
         arr = arr.astype(dtype)
-        return arr, FileMeta(path, shape, dtype_str, enc_name, data_add) if return_meta else arr
+        if return_meta: return arr, FileMeta(path, shape, dtype_str, enc_name, data_add)
+        else: return arr
