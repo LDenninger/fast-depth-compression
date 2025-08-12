@@ -134,7 +134,7 @@ def test_rvl_video(path: str = './examples/depth.npz'):
     ##-- Encoding --##
     try:
         start_time = time.perf_counter()
-        compressed_data = encoder.encode(depth, verbose=True)
+        compressed_data = encoder.encode(depth)
         end_time = time.perf_counter()
         compression_time = (end_time - start_time)*1000
         print(colored("SUCCESS: ", 'green'), 'Data encoded successfully.')
@@ -146,7 +146,7 @@ def test_rvl_video(path: str = './examples/depth.npz'):
     ##-- Decoding --##
     try:
         start_time = time.perf_counter()
-        data_decoded = decoder.decode(compressed_data, verbose=True)
+        data_decoded = decoder.decode(compressed_data)
         end_time = time.perf_counter()
         decoding_time = (end_time - start_time)*1000
         data_decoded = data_decoded.view(np.float16)

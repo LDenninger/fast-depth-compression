@@ -1,7 +1,8 @@
 // bindings.cpp — optimized bindings minimizing Python<->C++ overhead
 // - Zero-copy-ish bytes intake using PyBytes_AS_STRING with keepalive
 // - NumPy outputs for decoders to avoid Python list-of-lists materialization
-// - Extra overloads for encoders to accept NumPy buffers directly (pointer pass-through)
+// - NumPy-first encoder overloads (C-contiguous int16) with logical flattening of trailing dims
+// - GIL release around heavy native encode calls
 // - C++ backend method signatures are unchanged; only binding glue is optimized
 
 #define PY_SSIZE_T_CLEAN
@@ -94,17 +95,26 @@ PYBIND11_MODULE(fdc_bindings, m) {
         // abstract, no constructor
         .def("encode",
              [](FrameEncoder &self, std::vector<short> &buf) {
-                 auto comp = self.encode(buf.data());
+                 std::vector<char> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(buf.data());
+                 }
                  return py::bytes(comp.data(), comp.size());
              },
              py::arg("depth_buffer"))
-        // Efficient overload: accept NumPy (C-contiguous) without intermediate std::vector copies
+        // Efficient overload: accept NumPy (C-contiguous int16) with no intermediate copies
         .def("encode",
-             [](FrameEncoder &self, py::array_t<int16_t, py::array::c_style | py::array::forcecast> arr) {
+             [](FrameEncoder &self, py::array_t<int16_t, py::array::c_style> arr) {
                  if (arr.ndim() != 1) {
-                     throw std::runtime_error("FrameEncoder.encode expects a 1D int16 array for a single frame.");
+                     throw std::runtime_error("FrameEncoder.encode expects a 1D int16 C-contiguous array.");
                  }
-                 auto comp = self.encode(reinterpret_cast<short *>(arr.mutable_data()));
+                 const int16_t *ptr = arr.data();
+                 std::vector<char> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(const_cast<short*>(reinterpret_cast<const short*>(ptr)));
+                 }
                  return py::bytes(comp.data(), comp.size());
              },
              py::arg("depth_buffer_np"))
@@ -117,45 +127,75 @@ PYBIND11_MODULE(fdc_bindings, m) {
         .def("encode",
              [](VideoEncoder &self, std::vector<short> &buf, int num_frames) {
                  self.setNumFrames(num_frames);
-                 auto comp = self.encode(buf.data());
-                 py::list py_frames;
-                 //py_frames.reserve(comp.size());
-                 for (auto &frame : comp) {
-                     py_frames.append(py::bytes(frame.data(), frame.size()));
+                 std::vector<std::vector<char>> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(buf.data());
                  }
-                 return py_frames;
+                 py::list out(comp.size());
+                 for (size_t i = 0; i < comp.size(); ++i) {
+                     const auto &frame = comp[i];
+                     out[i] = py::bytes(frame.data(), frame.size());
+                 }
+                 return out;
              },
              py::arg("depth_buffer"), py::arg("num_frames"))
-        // Efficient overload: accept NumPy holding concatenated frames
+        // Efficient overload: accept NumPy holding concatenated frames (1D, 2D, or N-D with trailing dims flattened logically)
         .def("encode",
              [](VideoEncoder &self,
-                py::array_t<int16_t, py::array::c_style | py::array::forcecast> arr,
+                py::array_t<int16_t, py::array::c_style> buf,
                 int num_frames) {
-                 self.setNumFrames(num_frames);
-                 if (arr.ndim() == 2) {
-                     // (frames, elems_per_frame) -> flatten view for pointer
-                     if (arr.shape(0) != num_frames) {
-                         throw std::runtime_error("VideoEncoder.encode: arr.shape[0] != num_frames");
+                 const int ndim = buf.ndim();
+                 if (ndim < 1) {
+                     throw std::runtime_error("VideoEncoder.encode: buf must be at least 1D int16 C-contiguous");
+                 }
+                 if (num_frames <= 0) {
+                     throw std::runtime_error("VideoEncoder.encode: num_frames must be > 0");
+                 }
+                 if (ndim >= 2) {
+                     if (buf.shape(0) != num_frames) {
+                         throw std::runtime_error("VideoEncoder.encode: buf.shape[0] != num_frames");
+                     }
+                     // per-frame logical size (optional validation only)
+                     py::ssize_t per_frame = 1;
+                     for (int k = 1; k < ndim; ++k) per_frame *= buf.shape(k);
+                     (void)per_frame;
+                 } else { // ndim == 1
+                     if (buf.size() % static_cast<size_t>(num_frames) != 0) {
+                         throw std::runtime_error("VideoEncoder.encode: 1D buf length not divisible by num_frames");
                      }
                  }
-                 auto comp = self.encode(reinterpret_cast<short *>(arr.mutable_data()));
-                 py::list py_frames;
-                 //py_frames.reserve(comp.size());
-                 for (auto &frame : comp) {
-                     py_frames.append(py::bytes(frame.data(), frame.size()));
+
+                 const int16_t *ptr = buf.data();
+                 self.setNumFrames(num_frames);
+
+                 std::vector<std::vector<char>> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(const_cast<short*>(reinterpret_cast<const short*>(ptr)));
                  }
-                 return py_frames;
+
+                 py::list out(comp.size());
+                 for (size_t i = 0; i < comp.size(); ++i) {
+                     const auto &frame = comp[i];
+                     out[i] = py::bytes(frame.data(), frame.size());
+                 }
+                 return out;
              },
              py::arg("depth_buffer_np"), py::arg("num_frames"))
         .def("encode",
              [](VideoEncoder &self, std::vector<short> &buf) {
-                 auto comp = self.encode(buf.data());
-                 py::list py_frames;
-                 //py_frames.reserve(comp.size());
-                 for (auto &frame : comp) {
-                     py_frames.append(py::bytes(frame.data(), frame.size()));
+                 std::vector<std::vector<char>> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(buf.data());
                  }
-                 return py_frames;
+                 py::list out(comp.size());
+                 for (size_t i = 0; i < comp.size(); ++i) {
+                     const auto &frame = comp[i];
+                     out[i] = py::bytes(frame.data(), frame.size());
+                 }
+                 return out;
              },
              py::arg("depth_buffer"))
         .def("setFrameEncoder", &VideoEncoder::setFrameEncoder)
@@ -189,22 +229,22 @@ PYBIND11_MODULE(fdc_bindings, m) {
                 std::vector<py::bytes> keepalive;
                 std::vector<char *> ptrs;
                 bytes_sequence_to_ptrs_with_keepalive(frames_bytes, keepalive, ptrs);
-       
+
                 // Backend returns std::vector<std::vector<short>>; keep signature the same
                 auto frames_vec = self.decode(ptrs);
-       
+
                 // Always return a NumPy array:
                 // - uniform frame sizes  -> 2D array (frames, elems_per_frame)
                 // - non-uniform sizes    -> concatenated 1D array
                 if (frames_vec.empty()) {
                     return py::array(py::dtype::of<int16_t>(), {0});  // empty 1D
                 }
-       
+
                 const size_t per = frames_vec.front().size();
                 const bool uniform = std::all_of(
                     frames_vec.begin(), frames_vec.end(),
                     [per](const std::vector<short> &v) { return v.size() == per; });
-       
+
                 if (uniform) {
                     const size_t frames = frames_vec.size();
                     std::vector<int16_t> flat(frames * per);
@@ -220,7 +260,7 @@ PYBIND11_MODULE(fdc_bindings, m) {
                     // Concatenate all frames into one large 1D array
                     size_t total = 0;
                     for (const auto &v : frames_vec) total += v.size();
-       
+
                     std::vector<int16_t> flat(total);
                     size_t offset = 0;
                     for (const auto &v : frames_vec) {
@@ -232,14 +272,13 @@ PYBIND11_MODULE(fdc_bindings, m) {
                 }
             },
             py::arg("frames_bytes"))
-       
         .def("setFrameDecoder", &VideoDecoder::setFrameDecoder)
         .def("setFrameSize", &VideoDecoder::setFrameSize)
         .def("setNumFrames", &VideoDecoder::setNumFrames)
         .def("getFrameSize", &VideoDecoder::getFrameSize)
         .def("getNumFrames", &VideoDecoder::getNumFrames);
 
-    // ===== TRVL Encoder =====
+    // ===== TRVL Encoder (single-frame) =====
     py::class_<trvl::EncoderTRVL>(m, "EncoderTRVL")
         .def(py::init<int, short, int>(),
              py::arg("frame_size"),
@@ -257,26 +296,48 @@ PYBIND11_MODULE(fdc_bindings, m) {
              [](trvl::EncoderTRVL &self,
                 std::vector<short> &depth_buffer,
                 bool keyframe) {
-                 auto compressed = self.encode(static_cast<short *>(depth_buffer.data()), keyframe);
+                 std::vector<char> compressed;
+                 {
+                     py::gil_scoped_release release;
+                     compressed = self.encode(static_cast<short *>(depth_buffer.data()), keyframe);
+                 }
                  return py::bytes(compressed.data(), compressed.size());
              },
              py::arg("depth_buffer"),
              py::arg("keyframe") = false)
-        // Efficient overload for NumPy input
+        // Efficient overload for NumPy input (1D int16)
         .def("encode",
-             [](trvl::EncoderTRVL &self,
-                py::array_t<int16_t, py::array::c_style | py::array::forcecast> depth_buffer,
-                bool keyframe) {
-                 if (depth_buffer.ndim() != 1) {
-                     throw std::runtime_error("EncoderTRVL.encode expects a 1D int16 array for a single frame.");
-                 }
-                 auto compressed = self.encode(
-                     reinterpret_cast<short *>(depth_buffer.mutable_data()),
-                     keyframe);
-                 return py::bytes(compressed.data(), compressed.size());
-             },
-             py::arg("depth_buffer_np"),
-             py::arg("keyframe") = false);
+            [](trvl::EncoderTRVL &self,
+               py::array_t<int16_t, py::array::c_style> depth_buffer,
+               bool keyframe) {
+                const int ndim = depth_buffer.ndim();
+                if (ndim < 1) {
+                    throw std::runtime_error(
+                        "EncoderTRVL.encode: buffer must be at least 1D int16 C-contiguous");
+                }
+       
+                // Logical flattening of all dimensions (no reshape/copy needed).
+                const size_t elems = static_cast<size_t>(depth_buffer.size());
+       
+                // Optional safety: ensure total elements match the encoder's frame size.
+                // Uncomment if you want strict validation.
+                // if (elems != static_cast<size_t>(self.getFrameSize())) {
+                //     throw std::runtime_error("EncoderTRVL.encode: flattened element count "
+                //                              "does not match encoder frame_size");
+                // }
+       
+                const int16_t* ptr = depth_buffer.data();
+       
+                std::vector<char> compressed;
+                {
+                    py::gil_scoped_release release;  // heavy work off the GIL
+                    compressed = self.encode(const_cast<short*>(
+                        reinterpret_cast<const short*>(ptr)), keyframe);
+                }
+                return py::bytes(compressed.data(), compressed.size());
+            },
+            py::arg("depth_buffer_np"),
+            py::arg("keyframe") = false);
 
     // ===== TRVL Video encoder =====
     py::class_<trvl::VideoEncoderTRVL>(m, "VideoEncoderTRVL")
@@ -290,36 +351,66 @@ PYBIND11_MODULE(fdc_bindings, m) {
                 std::vector<short> &depth_buffer,
                 int num_frames) {
                  self.setNumFrames(num_frames);
-                 auto comp = self.encode(depth_buffer.data());
-                 py::list py_frames;
-                 //py_frames.reserve(comp.size());
-                 for (auto &frame : comp) {
-                     py_frames.append(py::bytes(frame.data(), frame.size()));
+                 std::vector<std::vector<char>> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(depth_buffer.data());
                  }
-                 return py_frames;
+                 py::list out(comp.size());
+                 for (size_t i = 0; i < comp.size(); ++i) {
+                     const auto &frame = comp[i];
+                     out[i] = py::bytes(frame.data(), frame.size());
+                 }
+                 return out;
              },
              py::arg("depth_buffer"),
              py::arg("num_frames"),
              "Encode multiple frames with TRVL video encoder")
-        // Efficient overload for NumPy input
+        // Efficient overload for NumPy input (1D, 2D, or N-D; flatten trailing dims logically)
         .def("encode",
-             [](trvl::VideoEncoderTRVL &self,
-                py::array_t<int16_t, py::array::c_style | py::array::forcecast> depth_buffer,
-                int num_frames) {
-                 self.setNumFrames(num_frames);
-                 if (depth_buffer.ndim() == 2 && depth_buffer.shape(0) != num_frames) {
-                     throw std::runtime_error("VideoEncoderTRVL.encode: arr.shape[0] != num_frames");
-                 }
-                 auto comp = self.encode(reinterpret_cast<short *>(depth_buffer.mutable_data()));
-                 py::list py_frames;
-                 //py_frames.reserve(comp.size());
-                 for (auto &frame : comp) {
-                     py_frames.append(py::bytes(frame.data(), frame.size()));
-                 }
-                 return py_frames;
-             },
-             py::arg("depth_buffer_np"),
-             py::arg("num_frames"));
+            [](trvl::VideoEncoderTRVL &self,
+               py::array_t<int16_t, py::array::c_style> buf,
+               int num_frames) {
+                const int ndim = buf.ndim();
+                if (ndim < 1) {
+                    throw std::runtime_error(
+                        "VideoEncoderTRVL.encode: buf must be at least 1D int16 C-contiguous");
+                }
+                if (num_frames <= 0) {
+                    throw std::runtime_error("VideoEncoderTRVL.encode: num_frames must be > 0");
+                }
+                if (ndim >= 2) {
+                    if (buf.shape(0) != num_frames) {
+                        throw std::runtime_error("VideoEncoderTRVL.encode: buf.shape[0] != num_frames");
+                    }
+                    py::ssize_t per_frame = 1;
+                    for (int k = 1; k < ndim; ++k) per_frame *= buf.shape(k);
+                    (void)per_frame;
+                } else { // 1D
+                    if (buf.size() % static_cast<size_t>(num_frames) != 0) {
+                        throw std::runtime_error(
+                            "VideoEncoderTRVL.encode: 1D buf length not divisible by num_frames");
+                    }
+                }
+
+                const int16_t* ptr = buf.data();
+                self.setNumFrames(num_frames);
+
+                std::vector<std::vector<char>> comp;
+                {
+                    py::gil_scoped_release release;  // heavy work without the GIL
+                    comp = self.encode(const_cast<short*>(
+                        reinterpret_cast<const short*>(ptr)));
+                }
+
+                py::list out(comp.size());
+                for (size_t i = 0; i < comp.size(); ++i) {
+                    const auto &frame = comp[i];
+                    out[i] = py::bytes(frame.data(), frame.size());
+                }
+                return out;
+            },
+            py::arg("buf_np"), py::arg("num_frames"));
 
     // ===== TRVL Decoder =====
     py::class_<trvl::DecoderTRVL>(m, "DecoderTRVL")
@@ -361,19 +452,19 @@ PYBIND11_MODULE(fdc_bindings, m) {
                 std::vector<py::bytes> keepalive;
                 std::vector<char *> ptrs;
                 bytes_sequence_to_ptrs_with_keepalive(frames_bytes, keepalive, ptrs);
-        
+
                 auto frames_vec = self.decode(ptrs);  // backend signature unchanged
-        
+
+                const size_t per = frames_vec.empty() ? 0 : frames_vec.front().size();
+                const bool uniform = !frames_vec.empty() && std::all_of(
+                    frames_vec.begin(), frames_vec.end(),
+                    [per](const std::vector<short> &v) { return v.size() == per; });
+
                 if (frames_vec.empty()) {
                     // Return an empty 1D int16 array
                     return py::array(py::dtype::of<int16_t>(), {0});
                 }
-        
-                const size_t per = frames_vec.front().size();
-                const bool uniform = std::all_of(
-                    frames_vec.begin(), frames_vec.end(),
-                    [per](const std::vector<short> &v) { return v.size() == per; });
-        
+
                 if (uniform) {
                     // Pack into a single 2D NumPy array (int16)
                     const size_t frames = frames_vec.size();
@@ -385,16 +476,16 @@ PYBIND11_MODULE(fdc_bindings, m) {
                                     per * sizeof(int16_t));
                     }
                     return numpy_from_owned_vector_2d(std::move(flat),
-                                                        static_cast<ssize_t>(frames),
-                                                        static_cast<ssize_t>(per));
+                                                      static_cast<ssize_t>(frames),
+                                                      static_cast<ssize_t>(per));
                 } else {
                     // Fallback: concatenate all frames into one large 1D array (int16)
                     size_t total = 0;
                     for (const auto &v : frames_vec) total += v.size();
-        
+
                     std::vector<int16_t> flat;
                     flat.resize(total);
-        
+
                     size_t offset = 0;
                     for (const auto &v : frames_vec) {
                         const size_t bytes = v.size() * sizeof(int16_t);
@@ -415,20 +506,44 @@ PYBIND11_MODULE(fdc_bindings, m) {
         .def(py::init<int>(), py::arg("frame_size"))
         .def("encode",
              [](EncoderRVL &self, std::vector<short> &buf) {
-                 auto comp = self.encode(buf.data());
+                 std::vector<char> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(buf.data());
+                 }
                  return py::bytes(comp.data(), comp.size());
              },
              py::arg("depth_buffer"))
-        // Efficient overload: NumPy input
+        // Efficient overload: NumPy input (1D int16)
         .def("encode",
-             [](EncoderRVL &self, py::array_t<int16_t, py::array::c_style | py::array::forcecast> arr) {
-                 if (arr.ndim() != 1) {
-                     throw std::runtime_error("EncoderRVL.encode expects a 1D int16 array for a single frame.");
-                 }
-                 auto comp = self.encode(reinterpret_cast<short *>(arr.mutable_data()));
-                 return py::bytes(comp.data(), comp.size());
-             },
-             py::arg("depth_buffer_np"));
+            [](EncoderRVL &self,
+               py::array_t<int16_t, py::array::c_style> depth_buffer) {
+                const int ndim = depth_buffer.ndim();
+                if (ndim < 1) {
+                    throw std::runtime_error(
+                        "EncoderRVL.encode: buffer must be at least 1D int16 C-contiguous");
+                }
+       
+                // Logical flattening of all dimensions (no reshape/copy needed).
+                const size_t elems = static_cast<size_t>(depth_buffer.size());
+       
+                // Optional safety check: ensure total elements match configured frame size.
+                // if (elems != static_cast<size_t>(self.getFrameSize())) {
+                //     throw std::runtime_error("EncoderRVL.encode: flattened element count "
+                //                              "does not match encoder frame_size");
+                // }
+       
+                const int16_t* ptr = depth_buffer.data();
+       
+                std::vector<char> comp;
+                {
+                    py::gil_scoped_release release;  // run the heavy C++ without the GIL
+                    comp = self.encode(const_cast<short*>(
+                        reinterpret_cast<const short*>(ptr)));
+                }
+                return py::bytes(comp.data(), comp.size());
+            },
+            py::arg("depth_buffer_np"));
 
     py::class_<VideoEncoderRVL>(m, "VideoEncoderRVL")
         .def(py::init<int>(), py::arg("frame_size"))
@@ -437,34 +552,65 @@ PYBIND11_MODULE(fdc_bindings, m) {
                 std::vector<short> &buf,
                 int num_frames) {
                  self.setNumFrames(num_frames);
-                 auto comp = self.encode(buf.data());
-                 py::list py_frames;
-                 //py_frames.reserve(comp.size());
-                 for (auto &frame : comp) {
-                     py_frames.append(py::bytes(frame.data(), frame.size()));
+                 std::vector<std::vector<char>> comp;
+                 {
+                     py::gil_scoped_release release;
+                     comp = self.encode(buf.data());
                  }
-                 return py_frames;
+                 py::list out(comp.size());
+                 for (size_t i = 0; i < comp.size(); ++i) {
+                     const auto &frame = comp[i];
+                     out[i] = py::bytes(frame.data(), frame.size());
+                 }
+                 return out;
              },
              py::arg("buf"), py::arg("num_frames"))
-        // Efficient overload: NumPy input
+        // Efficient overload: NumPy input (1D, 2D, or N-D; flatten trailing dims logically)
         .def("encode",
-             [](VideoEncoderRVL &self,
-                py::array_t<int16_t, py::array::c_style | py::array::forcecast> buf,
-                int num_frames) {
-                 self.setNumFrames(num_frames);
-                 if (buf.ndim() == 2 && buf.shape(0) != num_frames) {
-                     throw std::runtime_error("VideoEncoderRVL.encode: arr.shape[0] != num_frames");
-                 }
-                 auto comp = self.encode(reinterpret_cast<short *>(buf.mutable_data()));
-                 py::list py_frames;
-                 //py_frames.reserve(comp.size());
-                 for (auto &frame : comp) {
-                     py_frames.append(py::bytes(frame.data(), frame.size()));
-                 }
-                 return py_frames;
-             },
-             py::arg("buf_np"), py::arg("num_frames"));
+            [](VideoEncoderRVL &self,
+               py::array_t<int16_t, py::array::c_style> buf,
+               int num_frames) {
+                const int ndim = buf.ndim();
+                if (ndim < 1) {
+                    throw std::runtime_error(
+                        "VideoEncoderTRVL.encode: buf must be at least 1D int16 C-contiguous");
+                }
+                if (num_frames <= 0) {
+                    throw std::runtime_error("VideoEncoderTRVL.encode: num_frames must be > 0");
+                }
+                if (ndim >= 2) {
+                    if (buf.shape(0) != num_frames) {
+                        throw std::runtime_error("VideoEncoderTRVL.encode: buf.shape[0] != num_frames");
+                    }
+                    py::ssize_t per_frame = 1;
+                    for (int k = 1; k < ndim; ++k) per_frame *= buf.shape(k);
+                    (void)per_frame;
+                } else { // 1D
+                    if (buf.size() % static_cast<size_t>(num_frames) != 0) {
+                        throw std::runtime_error(
+                            "VideoEncoderTRVL.encode: 1D buf length not divisible by num_frames");
+                    }
+                }
+       
+                const int16_t* ptr = buf.data();
+                self.setNumFrames(num_frames);
 
+                std::vector<std::vector<char>> comp;
+                {
+                    py::gil_scoped_release release;  // heavy work without the GIL
+                    comp = self.encode(const_cast<short*>(
+                        reinterpret_cast<const short*>(ptr)));
+                }
+
+                py::list out(comp.size());
+                for (size_t i = 0; i < comp.size(); ++i) {
+                    const auto &frame = comp[i];
+                    out[i] = py::bytes(frame.data(), frame.size());
+                }
+                return out;
+            },
+            py::arg("buf_np"), py::arg("num_frames"));
+       
     py::class_<DecoderRVL>(m, "DecoderRVL")
         .def(py::init<int>(), py::arg("frame_size"))
         .def("decode",
@@ -512,20 +658,17 @@ PYBIND11_MODULE(fdc_bindings, m) {
 /*
 Notes:
 
-1) Backend signatures:
-   - All calls into your C++ classes (encode/decode that take pointers) are unchanged.
-   - We added binding overloads that accept NumPy arrays on the encoder side for efficiency.
-     Your existing vector-based overloads remain, so external API calls won't break.
+1) Encoder paths:
+   - NumPy overloads require C-contiguous int16 (`py::array_t<int16_t, py::array::c_style>`).
+     This avoids hidden copies from `forcecast`/`mutable_data()`.
+   - For N-D inputs (>= 2D), frames are axis-0; trailing dims are logically flattened.
+   - `py::gil_scoped_release` surrounds native `encode` calls.
 
-2) Output types:
-   - Decoders now return NumPy arrays (int16) instead of Python lists to eliminate per-element boxing.
-     If you must retain the exact Python-level return types (lists), this would reintroduce overhead.
-     Consider updating downstream code to consume NumPy arrays for best performance.
+2) Vector overloads are kept for compatibility, but they will copy if Python lists are passed.
+   Prefer the NumPy overloads for performance.
 
-3) Video decoders with variable frame sizes:
-   - If frames are not uniform in length, we return a Python list of 1D NumPy arrays
-     (still much faster than list-of-Python-ints).
+3) Decoder paths already avoid per-element Python overhead by returning NumPy arrays.
 
-4) If your build of VideoDecoderRVL does NOT provide `decode_flat`, replace its use with
-   `self.decode(ptrs)` and flatten in the binding (same as the generic VideoDecoder path).
+4) If your RVL VideoDecoder lacks `decode_flat`, replace that call with `self.decode(ptrs)` and
+   flatten like the generic VideoDecoder block above.
 */

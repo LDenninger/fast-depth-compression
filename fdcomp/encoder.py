@@ -40,10 +40,11 @@ class Encoder:
                 "or reimplement the encode() function."
             )
 
-        # Ensure dtype=int16 without unnecessary copies
-        data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
-        # Ensure C-contiguous and flatten to 1D, but KEEP as NumPy array (no .tolist())
-        data = np.ascontiguousarray(data).ravel()
+        if data.dtype != np.int16:
+            data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
+        
+        if not data.flags.c_contiguous:
+            data = np.ascontiguousarray(data, dtype=np.int16)
 
         # Pass the NumPy buffer directly to the optimized bindings (no Python list conversion)
         data_compressed = self._encode_fn(data, *args, **kwargs)
@@ -198,20 +199,18 @@ class EncoderTRVLVideo(Encoder, fb.VideoEncoderTRVL):
                                      change_threshold,
                                      invalidation_threshold)
         Encoder.__init__(self, suppress_warnings)
-
+        
     def encode(self, data: np.ndarray, *args, **kwargs) -> List[bytes]:
-        # Cast data to int16 and make contiguous
-        data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
+        # One-shot: ensure int16 & C-contiguous (minimize copies)
+        if data.dtype != np.int16:
+            data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
         
-        # Calculate number of frames from the original shape before flattening
-        num_frames = data.shape[0]
-        
-        # Now flatten for the C++ binding
-        data = np.ascontiguousarray(data).ravel()
-        
-        # Call the C++ binding directly with positional arguments
-        data_compressed = fb.VideoEncoderTRVL.encode(self, data, num_frames)
-        return data_compressed
+        if not data.flags.c_contiguous:
+            data = np.ascontiguousarray(data, dtype=np.int16)
+
+        num_frames = int(data.shape[0])  # works for 1D or 2D (frames x frame_size)
+        # Pass the array directly; binding reads pointer without copying.
+        return fb.VideoEncoderTRVL.encode(self, data, num_frames)
 #######################################################
 #################### RVL Encoder ######################
 #######################################################
@@ -233,6 +232,14 @@ class EncoderRVLVideo(Encoder, fb.VideoEncoderRVL):
         Encoder.__init__(self, suppress_warnings, fb.VideoEncoderRVL.encode.__get__(self, fb.VideoEncoderRVL))
 
     def encode(self, data: np.ndarray, *args, **kwargs) -> List[bytes]:
-        num_frames = data.shape[0]
-        return super().encode(data, *args, num_frames=num_frames, **kwargs)
+        # One-shot: ensure int16 & C-contiguous (minimize copies)
+        if data.dtype != np.int16:
+            data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
+        
+        if not data.flags.c_contiguous:
+            data = np.ascontiguousarray(data, dtype=np.int16)
+
+        num_frames = int(data.shape[0])  # works for 1D or 2D (frames x frame_size)
+        # Pass the array directly; binding reads pointer without copying.
+        return fb.VideoEncoderRVL.encode(self, data, num_frames)
 

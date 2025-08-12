@@ -3,6 +3,7 @@ from typing import List, Union, Tuple
 import io
 from termcolor import colored
 import time
+from collections.abc import Sequence
 
 try:
     from . import fdc_bindings as fb
@@ -36,7 +37,6 @@ class Decoder:
                 "Decoder must be supplied with the decoding function "
                 "('decode_fn' argument in constructor) or reimplement decode()."
             )
-
         if verbose:
             return self._decode_verbose(data, frame_size, *args, **kwargs)
 
