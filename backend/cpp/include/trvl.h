@@ -208,8 +208,13 @@
 
 #pragma once
 
+#include "base.h"
 #include "rvl.h"
+#include <vector>
+#include <stdexcept>
+#include <cstring>
 #include <iostream>
+#include <algorithm>
 
 namespace trvl
 {
@@ -254,69 +259,188 @@ void update_pixel(Pixel& pixel, short raw_value, short change_threshold, int inv
         pixel.value = raw_value;
 }
 
-class EncoderTRVL
-{
-public:
-    EncoderTRVL(int frame_size, short change_threshold, int invalid_threshold)
-        : pixels_(frame_size), change_threshold_(change_threshold), invalid_threshold_(invalid_threshold)
+class EncoderTRVL : public FrameEncoder {
+ public:
+    EncoderTRVL(int frame_size,
+                short change_threshold,
+                int invalid_threshold)
+        : FrameEncoder(frame_size),
+        change_threshold_(change_threshold),
+        invalid_threshold_(invalid_threshold)
     {
+        pixels_.resize(frame_size);
     }
 
-    std::vector<char> encode(short* depth_buffer, bool keyframe)
-    {
-        auto frame_size = pixels_.size();
-        if (keyframe) {
-            for (int i = 0; i < frame_size; ++i) {
+    // Override abstract encode; user can set "keyframe" via setter
+    std::vector<char> encode(short* depth_buffer, bool keyframe) {
+        if (keyframe_) {
+            // On keyframe, initialize pixels_
+            for (int i = 0, n = frame_size_; i < n; ++i) {
                 pixels_[i].value = depth_buffer[i];
-                // Not sure this is the best way to set invalid_count...
-                pixels_[i].invalid_count = depth_buffer[i] == 0 ? 1 : 0;
+                pixels_[i].invalid_count = (depth_buffer[i] == 0 ? 1 : 0);
             }
-
-            return rvl::compress(depth_buffer, frame_size);
-        }
-        
-        std::vector<short> pixel_diffs(frame_size);
-        for (int i = 0; i < frame_size; ++i) {
-            pixel_diffs[i] = pixels_[i].value;
-            update_pixel(pixels_[i], depth_buffer[i], change_threshold_, invalid_threshold_);
-            pixel_diffs[i] = pixels_[i].value - pixel_diffs[i];
+            keyframe_ = false;  // reset flag if desired
+            //return rvl::compress(depth_buffer, frame_size_);
+            return rvl::compress(static_cast<short*>(depth_buffer), frame_size_);
         }
 
-        auto tmp = rvl::compress(pixel_diffs.data(), frame_size);
+         // Non-keyframe: delta encoding
+        std::vector<short> pixel_diffs(frame_size_);
+        for (int i = 0, n = frame_size_; i < n; ++i) {
+            short old_value = pixels_[i].value;
+            update_pixel(pixels_[i], depth_buffer[i],
+                        change_threshold_, invalid_threshold_);
+            pixel_diffs[i] = static_cast<short>(pixels_[i].value - old_value);
+        }
 
-        return tmp;
+        return rvl::compress(pixel_diffs.data(), frame_size_);
+     }
+
+     std::vector<char> encode(short* depth_buffer) override {
+         return encode(depth_buffer, keyframe_);
+     }
+    
+    // Allow user to mark the next frame as a keyframe
+    void setKeyframe(bool is_keyframe) {
+        keyframe_ = is_keyframe;
     }
 
-
+protected:
     std::vector<Pixel> pixels_;
+    short change_threshold_;
+    int invalid_threshold_;
+
+    bool keyframe_ = true;
+};
+
+class VideoEncoderTRVL: public VideoEncoder {
+ public:
+    VideoEncoderTRVL(int keyframe_interval,
+                    int frame_size,
+                    short change_threshold,
+                    int invalidation_threshold)
+        : VideoEncoder(new EncoderTRVL(frame_size, change_threshold, invalidation_threshold)),
+        keyframe_interval_(keyframe_interval),
+        change_threshold_(change_threshold),
+        invalid_threshold_(invalidation_threshold)
+    {
+        //std::cout << "Initializing TRVL Video Encoder with frame size: " << frame_size << std::endl;
+        //EncoderTRVL* enc = new EncoderTRVL(frame_size, change_threshold_, invalid_threshold_);
+        //std::cout << "TRVL Video Encoder initialized." << std::endl;
+        //setFrameEncoder(static_cast<FrameEncoder*>(enc));
+        //std::cout << "Setting frame size: " << frame_size << std::endl;
+        setFrameSize(frame_size);
+    }
+
+    std::vector<std::vector<char>> encode(short* depth_buffer) {
+        if (!getFrameEncoder()) {
+            throw std::runtime_error("FrameEncoder not initialized");
+        }
+        std::vector<std::vector<char>> encoded_bytes;
+        EncoderTRVL* trvl_enc = static_cast<EncoderTRVL*>(frame_encoder_);
+        for (int i = 0; i < num_frames_; ++i) {
+            bool is_key = keyframe_interval_ <= 0 || (i % keyframe_interval_ == 0);
+            if (trvl_enc) trvl_enc->setKeyframe(is_key);
+            short* frame_ptr = depth_buffer + i * frame_size_;
+            std::vector<char> frame_bytes = frame_encoder_->encode(frame_ptr);
+            encoded_bytes.push_back(frame_bytes);
+        }
+        return encoded_bytes;
+    }
+
+protected:
+    int keyframe_interval_;
     short change_threshold_;
     int invalid_threshold_;
 };
 
-class DecoderTRVL
-{
+// Decoder for TRVL-encoded frames, implements FrameDecoder
+class DecoderTRVL : public FrameDecoder {
 public:
-    DecoderTRVL(int frame_size)
-        : prev_pixel_values_(frame_size, 0)
-    {
-    }
+    explicit DecoderTRVL(int frame_size)
+        : FrameDecoder(frame_size)
+        , prev_pixel_values_(frame_size, 0)
+    {}
 
-    std::vector<short> decode(char* trvl_frame, bool keyframe)
-    {
-        int frame_size = prev_pixel_values_.size();
+    // decode with keyframe flag
+    std::vector<short> decode(char* trvl_frame, bool keyframe) {
         if (keyframe) {
-            prev_pixel_values_ = rvl::decompress(trvl_frame, frame_size);
+            prev_pixel_values_ = rvl::decompress(trvl_frame, frame_size_);
             return prev_pixel_values_;
         }
-
-        auto pixel_diffs = rvl::decompress(trvl_frame, frame_size);
-        for (int i = 0; i < frame_size; ++i)
-            prev_pixel_values_[i] += pixel_diffs[i];
-
+        auto diffs = rvl::decompress(trvl_frame, frame_size_);
+        for (int i = 0; i < frame_size_; ++i)
+            prev_pixel_values_[i] += diffs[i];
         return prev_pixel_values_;
     }
 
-private:
+    // override base interface: assume non-keyframe
+    std::vector<short> decode(char* compressed_bytes) override {
+        return decode(compressed_bytes, false);
+    }
+
+protected:
     std::vector<short> prev_pixel_values_;
 };
-}
+
+// Video decoder that handles TRVL keyframes at a set interval
+class VideoDecoderTRVL : public VideoDecoder {
+ public:
+     VideoDecoderTRVL(int keyframe_interval, int frame_size)
+         : VideoDecoder(nullptr)
+         , keyframe_interval_(keyframe_interval)
+     {
+         DecoderTRVL* dec = new DecoderTRVL(frame_size);
+         setFrameDecoder(dec);
+         setFrameSize(frame_size);
+     }
+    std::vector<short> decode(std::vector<char*>& video_bytes, std::vector<int> keyframes) {
+        // TODO: Change this to the signature of decode function below
+        if (!getFrameDecoder()) {
+            throw std::runtime_error("FrameDecoder must be initialized");
+        }
+        setNumFrames(static_cast<int>(video_bytes.size()));
+        std::vector<short> output;
+        output.reserve(static_cast<size_t>(frame_size_) * video_bytes.size());
+
+        DecoderTRVL* trvl_dec = static_cast<DecoderTRVL*>(frame_decoder_);
+        if (!trvl_dec) {
+            throw std::runtime_error("Invalid decoder type");
+        }
+        for (size_t i = 0; i < video_bytes.size(); ++i) {
+            bool is_key = (std::find(keyframes.begin(), keyframes.end(), static_cast<int>(i)) != keyframes.end());
+            std::vector<short> frame = trvl_dec->decode(video_bytes[i], is_key);
+            output.insert(output.end(), frame.begin(), frame.end());
+        }
+        return output;
+    }
+
+    std::vector<std::vector<short>> decode(std::vector<char*>& video_bytes) {
+        if (!getFrameDecoder()) {
+            throw std::runtime_error("FrameDecoder must be initialized");
+        }
+        int frames = static_cast<int>(video_bytes.size());
+        setNumFrames(frames);
+        std::vector<std::vector<short>> output;
+
+        DecoderTRVL* trvl_dec = static_cast<DecoderTRVL*>(frame_decoder_);
+        if (!trvl_dec) {
+            throw std::runtime_error("Invalid decoder type");
+        }
+        for (int i = 0; i < frames; ++i) {
+            bool is_key = (i % keyframe_interval_ == 0);
+            std::vector<short> frame = trvl_dec->decode(video_bytes[i], is_key);
+            output.push_back(frame);
+        }
+        return output;
+    }
+
+    void setKeyframeInterval(int interval) {
+        keyframe_interval_ = interval;
+    }
+
+protected:
+    int keyframe_interval_;
+};
+
+} // namespace trvl

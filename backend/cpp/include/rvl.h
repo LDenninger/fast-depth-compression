@@ -208,9 +208,11 @@
 
 #pragma once
 
+#include "base.h"
 #include <vector>
 #include <stdexcept>
 #include <iostream>
+#include <cstring>
 
 // This algorithm is from
 // Wilson, A. D. (2017, October). Fast lossless depth image compression.
@@ -364,3 +366,56 @@ std::vector<short> decompress(char* input, int num_pixels)
     return output;
 }
 }
+
+// Frame-level RVL encoder
+class EncoderRVL : public ::FrameEncoder {
+public:
+    explicit EncoderRVL(int frame_size)
+        : FrameEncoder(frame_size) {}
+
+    std::vector<char> encode(short* depth_buffer) override {
+        return rvl::compress(static_cast<short*>(depth_buffer), frame_size_);
+    }
+};
+
+// Video-level RVL encoder
+class VideoEncoderRVL : public ::VideoEncoder {
+public:
+    explicit VideoEncoderRVL(int frame_size)
+        : VideoEncoder(new EncoderRVL(frame_size)) {
+        setFrameSize(frame_size);
+    }
+};
+
+// Frame-level RVL decoder
+class DecoderRVL : public ::FrameDecoder {
+public:
+    explicit DecoderRVL(int frame_size)
+        : FrameDecoder(frame_size) {}
+    std::vector<short> decode(char* compressed_bytes) override {
+        return rvl::decompress(static_cast<char*>(compressed_bytes), frame_size_);
+    }
+};
+
+// Video-level RVL decoder
+class VideoDecoderRVL : public ::VideoDecoder {
+public:
+    explicit VideoDecoderRVL(int frame_size)
+        : VideoDecoder(new DecoderRVL(frame_size)) {
+        setFrameSize(frame_size);
+    }
+    std::vector<std::vector<short>> decode(std::vector<char*>& video_bytes) {
+        int frames = static_cast<int>(video_bytes.size());
+        setNumFrames(frames);
+        std::vector<std::vector<short>> output;
+        //output.reserve(static_cast<size_t>(frame_size_) * frames);
+
+        DecoderRVL* rvl_dec = static_cast<DecoderRVL*>(frame_decoder_);
+
+        for (int i = 0; i < frames; i++) {
+            std::vector<short> frame = rvl_dec->decode(video_bytes[i]);
+            output.push_back(frame);
+        }
+        return output;
+    }
+};

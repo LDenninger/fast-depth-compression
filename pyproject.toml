@@ -1,12 +1,14 @@
 [build-system]
 requires = [
-    "scikit-build-core>=0.3.3",
+    "exceptiongroup==1.0.0",
+    "packaging>=25.0",
+    "scikit-build-core==0.11.5",
+    "setuptools>=68.0.0",
     "pybind11>=2.5.0",
     "cmake>=3.15",
     "ninja",
 ]
 build-backend = "scikit_build_core.build"
-
 [project]
 name = "fdcomp"
 version = "0.2.1"
@@ -32,7 +34,6 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
 ]
 [project.optional-dependencies]
-# keep test dependencies only for pytest
 test = [
     "pytest",
     "pytest-cov",
@@ -41,5 +42,10 @@ test = [
 
 [tool.scikit-build]
 cmake.verbose = true
-logging.level = "INFO"
-cmake.args = ["-DCMAKE_BUILD_TYPE=Release"]
+logging.level = "DEBUG"
+cmake.args = [
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DBUILD_PYTHON_BINDINGS=ON",
+  "-DBUILD_CPP_TESTS=OFF",
+  "-DCMAKE_VERBOSE_MAKEFILE=ON"
+]

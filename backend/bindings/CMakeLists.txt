@@ -7,10 +7,11 @@ pybind11_add_module(fdc_bindings
 
 target_include_directories(fdc_bindings PRIVATE
     ${Python3_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/cpp/include
+    ${CMAKE_SOURCE_DIR}/backend/cpp/include
 )
 
 target_link_libraries(fdc_bindings PRIVATE
     fdcomp_cpp
-    ${Python3_LIBRARIES}
+    pybind11::pybind11
+    Python3::Python
 )

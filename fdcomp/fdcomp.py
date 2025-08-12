@@ -4,11 +4,14 @@ from abc import abstractmethod
 import numpy as np
 import struct
 
-from .encoder import Encoder, EncoderTRVL, EncoderTRVLVideo, EncoderRVLVideo
-from .decoder import Decoder, DecoderTRVL, DecoderTRVLVideo, DecoderRVLVideo
+from .encoder import Encoder, FrameEncoder, VideoEncoder, EncoderTRVL, EncoderTRVLVideo, EncoderRVLVideo
+from .decoder import Decoder, FrameDecoder, VideoDecoder, DecoderTRVL, DecoderTRVLVideo, DecoderRVLVideo
 
-DEFAULT_ENCODER = EncoderTRVLVideo
-DEFAULT_DECODER = DecoderTRVL
+DEFAULT_FRAME_ENCODER = EncoderTRVL
+DEFAULT_VIDEO_ENCODER = EncoderTRVLVideo
+
+DEFAULT_FRAME_DECODER = DecoderTRVL
+DEFAULT_VIDEO_DECODER = DecoderTRVLVideo
 
 class FileMeta:
     """
@@ -87,7 +90,7 @@ def inspect(file: Union[str, Path],
     return 
 
 def load(file: Union[str, Path],
-         decoder: Union[Decoder, Literal['trvl', 'rvl', 'raw']] = None,
+         decoder: Union[Literal['trvl', 'rvl', 'raw']] = None,
          return_meta: bool = False,
          *args, **kwargs) -> np.ndarray:
     """

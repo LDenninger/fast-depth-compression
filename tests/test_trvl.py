@@ -118,14 +118,14 @@ def test_trvl_video(path: str = './examples/depth.npz', keyframe_stride: int = 1
     
     ##-- Encoder Initialization --##
     try:
-        encoder = fdcomp.EncoderTRVLVideo(frame_size, change_threshold, 2, keyframe_stride, True)
+        encoder = fdcomp.EncoderTRVLVideo(frame_size, change_threshold=change_threshold, invalidation_threshold=2, keyframe_interval=keyframe_stride, suppress_warnings=True)
         print(colored("SUCCESS: ", 'green'), 'EncoderTRVL initialized successfully.')
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while initializing EncoderTRVL:\n{e}')
         return False
     ##-- Decoder Initialization --##
     try:
-        decoder = fdcomp.DecoderTRVLVideo(frame_size, False)
+        decoder = fdcomp.DecoderTRVLVideo(frame_size, keyframe_interval=keyframe_stride, suppress_warnings=False)
         print(colored("SUCCESS: ", 'green'), 'DecoderTRVL initialized successfully.')
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while initializing DecoderTRVL:\n{e}')
@@ -135,7 +135,7 @@ def test_trvl_video(path: str = './examples/depth.npz', keyframe_stride: int = 1
     ##-- Encoding --##
     try:
         start_time = time.perf_counter()
-        data_compressed, keyframes = encoder.encode(depth)
+        data_compressed = encoder.encode(depth)
         end_time = time.perf_counter()
         compression_time = (end_time - start_time)*1000  
         print(colored("SUCCESS: ", 'green'), 'Data encoded successfully.')
@@ -146,7 +146,7 @@ def test_trvl_video(path: str = './examples/depth.npz', keyframe_stride: int = 1
     ##-- Decoding --##
     try:
         start_time = time.perf_counter()
-        data_decoded = decoder.decode(data_compressed, keyframes)
+        data_decoded = decoder.decode(data_compressed)
         end_time = time.perf_counter()
         decoding_time = (end_time - start_time)*1000
         data_decoded = data_decoded.view(np.float16)

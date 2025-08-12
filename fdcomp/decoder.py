@@ -1,241 +1,182 @@
 import numpy as np
-from typing import List
-import io                              # add for raw decoding
+from typing import List, Union, Tuple
+import io
+from termcolor import colored
+import time
 
-# Import bindings with fallback
-def _get_bindings():
-    try:
-        from .fdc_bindings import DecoderTRVL as _DecoderTRVL, RVLDecompress
-        return _DecoderTRVL, RVLDecompress
-    except ImportError:
-        # If importing during development without compiled bindings
-        return None, None
+try:
+    from . import fdc_bindings as fb
+except ImportError:
+    raise ImportError("fdcomp C++ backend is not available. Make sure to have it build and installed correctly.")
+# Export names
+__all__ = [
+    'Decoder', 'FrameDecoder', 'VideoDecoder',
+    'DecoderRaw', 'DecoderRawVideo',
+    'DecoderTRVL', 'DecoderTRVLVideo',
+    'DecoderRVL', 'DecoderRVLVideo'
+]
 
-_DecoderTRVL, RVLDecompress = _get_bindings()
-
-############################################
-############### Base Classes ###############
-############################################
-
+#######################################################
+################### Base Classes ######################
+#######################################################
 class Decoder:
-    """
-        Base class for all decoders.
-        Implemented decoders should inherit from either the subclasses FrameDecoder or VideoDecoder.
-    """
+
+    def __init__(self, suppress_warnings: bool = True, decode_fn = None):
+        self.suppress_warnings = suppress_warnings
+        self._decode_fn = decode_fn
+        return
     
-    def __init__(self, frame_size: int = None, *args, **kwargs):
-        self._frame_size = frame_size
-
-    def __call__(self, data: bytes, frame_size: int = None, *args, **kwargs) -> np.ndarray:
-        self.frame_size = frame_size
-        return self.decode(data, *args, **kwargs)
-
-    def decode(self, data: bytes, *args, **kwargs) -> np.ndarray:
-        """
-            The decoding function to be implemented by subclasses.
-        """
-        raise NotImplementedError("Subclasses should implement the decode() method.")
-
-class FrameDecoder(Decoder):
-    """
-        FrameDecoder base class.
-        This decoder decodes single frames of depth data.
-        Implemented decoders should implement the decode() method.
-    """
-    def decode(self, data: bytes, *args, **kwargs) -> np.ndarray:
-        return super().decode(data, *args, **kwargs)
-    
-    @property
-    def frame_size(self):
-        return self._frame_size
-    
-    @frame_size.setter
-    def frame_size(self, value):
-        self._frame_size = value
-
-class VideoDecoder(Decoder):
-    """
-        VideoDecoder base class.
-        This decoder decodes sequences of frames (videos) of depth data.
-        If used as a wrapper, provide a FrameDecoder instance.
-    """
-    def __init__(self, frame_decoder: FrameDecoder = None, *args, **kwargs):
-        frame_size = kwargs.get('frame_size', None)
-        self.frame_decoder = frame_decoder
-        if self.frame_decoder is not None and frame_size is None:
-            frame_size = self.frame_decoder.frame_size
-        super().__init__(frame_size=frame_size, *args, **kwargs)
-
-    @property
-    def frame_size(self):
-        if self.frame_decoder is not None:
-            return self.frame_decoder.frame_size
-        return None
-    
-    @frame_size.setter
-    def frame_size(self, value):
-        if self.frame_decoder is not None:
-            self.frame_decoder.frame_size = value
-
+    def decode(self, data: Union[bytes, List[bytes]], frame_size: Tuple[int, int] = None, verbose: bool = False, *args, **kwargs) -> np.ndarray:
         
-
-    def decode(self, data: List[bytes], *args, **kwargs):
-        if type(self) is VideoDecoder:
-            assert self.frame_decoder is not None, "VideoDecoder requires a FrameDecoder instance."
-            outputs = []
-            for i in range(len(data)):
-                frame_decoded = self.frame_decoder.decode(data[i], *args, **kwargs)
-                frame_decoded = np.array(frame_decoded, dtype=np.int16)
-                outputs.append(frame_decoded)
-            return outputs
+        if verbose:
+            return self._decode_verbose(data, frame_size, *args, **kwargs)
         
-        return super().decode(data, *args, **kwargs)
+        if self._decode_fn is None:
+            raise NotImplementedError("Decoder must be supplied with the decoding function ('decode_fn' argument in constructor) or reimplement the decode() function.")
+
+        data_uncompressed = self._decode_fn(data, *args, **kwargs)
+        data_uncompressed = np.array(data_uncompressed, dtype=np.int16)
+        if frame_size is not None:
+            if data_uncompressed.ndim == 1:
+                data_uncompressed = data_uncompressed.reshape(*frame_size)
+            else:
+                data_uncompressed = data_uncompressed.reshape(-1, *frame_size)
+            
+        invalid_data = np.isnan(data_uncompressed)
+        data_uncompressed[invalid_data] = 0 
+        return data_uncompressed
     
-############################################
-########## Implemented Encoders ############
-############################################ 
+    def _decode_verbose(self, data: Union[bytes, List[bytes]], frame_size: Tuple[int, int] = None, *args, **kwargs) -> np.ndarray:
+        if self._decode_fn is None:
+            raise NotImplementedError("Decoder must be supplied with the decoding function ('decode_fn' argument in constructor) or reimplement the decode() function.")
 
-############### Raw Decoder ################
+        start_time = time.perf_counter()
+        data_uncompressed = self._decode_fn(data, *args, **kwargs)
+        end_time = time.perf_counter()
+        decoding_time = (end_time - start_time) * 1000  # in milliseconds
+        print(f"Decoding time: {decoding_time:.2f} ms")
+        start_time = time.perf_counter()
+        data_uncompressed = np.array(data_uncompressed, dtype=np.int16)
+        end_time = time.perf_counter()
+        conversion_time = (end_time - start_time) * 1000  # in milliseconds
+        print(f"Conversion time: {conversion_time:.2f} ms")
+        if frame_size is not None:
+            if data_uncompressed.ndim == 1:
+                data_uncompressed = data_uncompressed.reshape(*frame_size)
+            else:
+                data_uncompressed = data_uncompressed.reshape(-1, *frame_size)
+            
+        invalid_data = np.isnan(data_uncompressed)
+        data_uncompressed[invalid_data] = 0 
+        return data_uncompressed
+    
+    def _cast_int16(self, data: np.ndarray, suppress_warnings: bool = True) -> np.ndarray:
+        """
+            Casts the input data to int16 if it is of type float16.
+        """
+        if data.dtype == np.float16:
+            if not suppress_warnings: print(colored("Warning: ", "yellow"), "Automatically converting float16 to int16 for encoding.")
+            return data.view(np.int16)
+        elif data.dtype == np.float32:
+            if not suppress_warnings: print(colored("Warning: ", "yellow"), "Automatically narrowing float32 to int16 for encoding.")
+            return data.astype(np.float16).view(np.int16)
+        elif data.dtype == np.int32:
+            if not suppress_warnings: print(colored("Warning: ", "yellow"), "Automatically narrowing int32 to int16 for encoding.")
+            return data.astype(np.int16)
+        return data
 
-class DecoderRaw(FrameDecoder):
+class FrameDecoder(Decoder, fb.FrameDecoder):
     """
-        Frame decoder converting raw bytes back to a numpy array.
+    Base frame decoder binding wrapper.
     """
-    name: str = "raw"
+    def __init__(self, frame_size: int, suppress_warnings: bool = True):
+        fb.FrameDecoder.__init__(self, frame_size)
+        Decoder.__init__(self, suppress_warnings, fb.FrameDecoder.decode.__get__(self, fb.FrameDecoder))
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class VideoDecoder(Decoder, fb.VideoDecoder):
+    """
+    Base video decoder binding wrapper.
+    """
+    def __init__(self, frame_decoder: FrameDecoder, suppress_warnings: bool = True):
+        fb.VideoDecoder.__init__(self, frame_decoder)
+        Decoder.__init__(self, suppress_warnings, fb.VideoDecoder.decode.__get__(self, fb.VideoDecoder))
 
-    def decode(self, data: bytes, *args, **kwargs) -> np.ndarray:
+#######################################################
+#################### Raw Decoder ######################
+#######################################################
+
+class DecoderRaw(Decoder):
+    """
+    Raw frame decoder: loads numpy array from bytes.
+    """
+    name = "raw"
+    def __init__(self, suppress_warnings: bool = True):
+        Decoder.__init__(self, suppress_warnings)
+    def decode(self, data: bytes) -> np.ndarray:
         buf = io.BytesIO(data)
         arr = np.load(buf)
         buf.close()
         return arr
 
-class DecoderRawVideo(VideoDecoder):
+class DecoderRawVideo(Decoder):
     """
-        Video decoder converting raw bytes back to numpy array frames.
-        Wraps the corresponding FrameDecoder for sequences of frames.
+    Raw video decoder: sequence of raw frame bytes.
     """
-    name: str = "raw"
+    name = "raw"
+    def __init__(self, suppress_warnings: bool = True):
+        Decoder.__init__(self, suppress_warnings)
+        self.frame_decoder = DecoderRaw(suppress_warnings)
+    def decode(self, data: List[bytes]) -> np.ndarray:
+        frames = [self.frame_decoder.decode(b) for b in data]
+        return np.stack(frames, axis=0)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(frame_decoder=DecoderRaw(), *args, **kwargs)
-
-    def decode(self, data: List[bytes], *args, **kwargs) -> np.ndarray:
-        outputs = []
-        for chunk in data:
-            frame = self.frame_decoder.decode(chunk)
-            outputs.append(frame)
-        return np.stack(outputs, axis=0)
-
-############## TRVL Decoder ################
-
-class DecoderTRVL(FrameDecoder):
+#######################################################
+#################### TRVL Decoder #####################
+#######################################################
+class DecoderTRVL(Decoder, fb.DecoderTRVL):
     """
-        Frame decoder for temporal RVL decoding.
-        Reference: https://github.com/hanseuljun/temporal-rvl
-        C++ binding: ./backend/cpp/include/trvl.h
+    TRVL frame decoder wrapping the C++ binding.
     """
-    name: str = "TRVL"
-    binding_class = _DecoderTRVL
-    def __init__(self, 
-                frame_size: int = None,
-                suppress_warnings: bool = False, *args, **kwargs
-                ):
-        super().__init__(frame_size=frame_size, *args, **kwargs)
-        self.suppress_warnings = suppress_warnings
-        if _DecoderTRVL is None:
-            raise ImportError("C++ bindings not available. Please install the package with 'pip install .'")
+    def __init__(self, frame_size: int, suppress_warnings: bool = True):
+        fb.DecoderTRVL.__init__(self, frame_size)
+        Decoder.__init__(self, suppress_warnings, fb.DecoderTRVL.decode.__get__(self, fb.DecoderTRVL))
+
+class DecoderTRVLVideo(Decoder, fb.VideoDecoderTRVL):
+    """
+    TRVL video decoder wrapping the C++ binding.
+    """
+    def __init__(self,
+                 frame_size: int,
+                 keyframe_interval: int = 20,
+                 suppress_warnings: bool = True):
+        # Validate keyframe_interval to prevent division by zero
+        if keyframe_interval <= 0:
+            keyframe_interval = 1  # Default to 1 if invalid
+            if not suppress_warnings:
+                print(colored("Warning: ", "yellow"), f"Invalid keyframe_interval ({keyframe_interval}), setting to 1")
         
-        self._decoder = None
-        if frame_size is not None:
-            self._decoder = _DecoderTRVL(frame_size)
+        # Initialize C++ binding with correct parameter order: keyframe_interval, frame_size
+        fb.VideoDecoderTRVL.__init__(self, keyframe_interval, frame_size)
+        Decoder.__init__(self, suppress_warnings, fb.VideoDecoderTRVL.decode.__get__(self, fb.VideoDecoderTRVL))
 
-    def decode(self, data: List[bytes], keyframe: bool = False, *args, **kwargs) -> np.ndarray:
-        data_uncompressed = self._decoder.decode(data, keyframe)
-        data_uncompressed = np.array(data_uncompressed, dtype=np.int16)
-        invalid_data = np.isnan(data_uncompressed)
-        data_uncompressed[invalid_data] = 0 
-        return data_uncompressed
-    
-    @property
-    def frame_size(self):
-        return self._frame_size
-    
-    @frame_size.setter
-    def frame_size(self, value):
-        self._frame_size = value
-        if value is not None:
-            self._decoder = _DecoderTRVL(self._frame_size)
-
-class DecoderTRVLVideo(VideoDecoder):
+#######################################################
+#################### RVL Decoder ######################
+#######################################################
+class DecoderRVL(Decoder, fb.DecoderRVL):
     """
-        Video decoder for temporal RVL decoding.
-        Wraps the corresponding FrameDecoder for sequences of depth frames.
+    RVL frame decoder wrapping the C++ binding.
     """
-    name: str = "TRVL"
-    def __init__(self, frame_size: int = None, suppress_warnings: bool = False, *args, **kwargs):
-        frame_decoder = DecoderTRVL(frame_size, suppress_warnings)
-        super().__init__(frame_decoder=frame_decoder)
+    def __init__(self, frame_size: int, suppress_warnings: bool = True):
+        fb.DecoderRVL.__init__(self, frame_size)
+        Decoder.__init__(self, suppress_warnings, fb.DecoderRVL.decode.__get__(self, fb.DecoderRVL))
 
-    def decode(self, data: List[bytes], keyframes: list = None, *args, **kwargs) -> np.ndarray:
-        if keyframes is None:
-            keyframes = [0]
-
-        keyframes = set(keyframes)
-
-        frame_size = kwargs.get('frame_size', None)
-        if frame_size is not None: self.frame_size = frame_size
-
-        outputs = []
-        for i in range(len(data)):
-            is_keyframe = i in keyframes
-            frame_decoded = self.frame_decoder.decode(data[i], is_keyframe)
-            outputs.append(frame_decoded)
-
-        outputs = np.stack(outputs, axis=0)
-        return outputs
-
-############### RVL Decoder ################
-
-class DecoderRVL(FrameDecoder):
+class DecoderRVLVideo(Decoder, fb.VideoDecoderRVL):
     """
-        Frame decoder for RVL decoding.
-        C++ binding: ./backend/cpp/include/rvl.h
+    RVL video decoder wrapping the C++ binding.
     """
-    name: str = "RVL"
-
-    def __init__(self, frame_size: int = None, suppress_warnings: bool = False, *args, **kwargs):
-        self.suppress_warnings = suppress_warnings
-        super().__init__(frame_size=frame_size, *args, **kwargs)
-
-    def decode(self, data: bytes, *args, **kwargs) -> np.ndarray:
-        if RVLDecompress is None:
-            raise ImportError("C++ bindings not available. Please install the package with 'pip install .'")
-        data_uncompressed = RVLDecompress(data, self._frame_size)
-        return np.array(data_uncompressed, dtype=np.int16)
-
-class DecoderRVLVideo(VideoDecoder):
-    """
-        Video decoder for RVL decoding.
-        Wraps the corresponding FrameDecoder for sequences of depth frames.
-    """
-    name: str = "RVL"
-    def __init__(self, frame_size: int = None, suppress_warnings: bool = False, *args, **kwargs):
-        self.suppress_warnings = suppress_warnings
-        frame_decoder = DecoderRVL(frame_size, suppress_warnings=False)
-        super().__init__(frame_decoder=frame_decoder)
+    def __init__(self, frame_size: int, suppress_warnings: bool = True):
+        fb.VideoDecoderRVL.__init__(self, frame_size)
+        Decoder.__init__(self, suppress_warnings, fb.VideoDecoderRVL.decode.__get__(self, fb.VideoDecoderRVL))
 
 
-    def decode(self, data: List[bytes], *args, **kwargs) -> np.ndarray:
-        assert self.frame_decoder.frame_size, "Please set frame_size before decoding."
 
-        outputs = []
-        for i in range(len(data)):
-            frame_decoded = self.frame_decoder.decode(data[i])
-            frame_decoded = np.array(frame_decoded, dtype=np.int16)
-            outputs.append(frame_decoded)
-
-        outputs = np.stack(outputs, axis=0)
-        return outputs
