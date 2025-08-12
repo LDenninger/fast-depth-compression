@@ -8,7 +8,13 @@
 [![Tests](https://img.shields.io/github/actions/workflow/status/LDenninger/fast-depth-compression/package-test.yml?label=Tests&style=flat)](https://github.com/LDenninger/fast-depth-compression/actions/workflows/package-test.yml)
 
 
-**Disclaimer:** The project is currently under development and there might be installation issues or issues in the backend. Please report these in the issues, I am trying to fix it as soon as possible. Pre-compiled binaries will be available at some point but for now please install everything from source. There are also some logic parts which in the future will be moved into the CPP-backend in favor of efficiency.
+**Disclaimer:** The project is currently under development and there might be installation issues or issues in the backend. Please report these in the issues, I am trying to fix it as soon as possible. Pre-compiled binaries will be available at some point but for now please install everything from source.
+
+**Recent Major Updates:**
+- ✅ **Backend Migration Complete**: The Python frontend has been successfully moved to the C++ backend for improved performance
+- ✅ **Enhanced C++ Bindings**: Optimized Python bindings with zero-copy operations and NumPy integration
+- ✅ **Performance Testing**: Added comprehensive performance benchmarking tools
+- ✅ **Improved API**: Streamlined encoder/decoder interfaces with better error handling
 
 ## ✨ Features
 
@@ -23,12 +29,12 @@
 | Section                                                          | Description                                  |
 | ---------------------------------------------------------------- | -------------------------------------------- |
 | [📁 **Project Structure**](#project-structure)                   | Overview of project folders and files        |
-| [⚙️ **Installation**](#installation)                              | Prerequisites & installation steps           |
+| [📈 **Performance**](#performance)                   | Overview of project folders and files        |
+| [⚙️ **Installation**](#installation)                              | Prerequisites & installation steps          |
 | [🚀 **Quick Start**](#quick-start)                               | Basic usage examples                         |
 | [📖 **API Reference**](#api-reference)                           | Details of encoders, decoders, utilities     |
 | [🧪 **Tests**](#tests)                                           | How to run the test suite                    |
 | [📜 **Algorithm References**](#algorithm-references)             | Citations for compression algorithms         |
-| [🤝 **Contributing**](#contributing)                             | Guidelines to contribute to the project      |
 | [📄 **License**](#license)                                       | Licensing information                        |
 
 <a name="project-structure"></a>
@@ -40,9 +46,24 @@ fast-depth-compression/
 │   ├── 📁 cpp/              # Core algorithms
 │   └── 📁 bindings/         # Python bindings
 ├── 📁 fdcomp/               # Python package
-├── 📁 examples/             # Usage examples
+├── 📁 examples/             # Usage/data examples
+├── 📁 tests/                # Tests for Python/C++
 └── 📄 README.md             # This file
 ```
+
+<a name="performance"></a>
+## 📈 Performance
+
+- **Easy Python API**: Shallow Numpy API with similar structure to `json` and `yaml` libraries.
+- **High-performance C++ core**: Compute-heavy paths implemented in modern C++.
+- **Zero-copy bridging**: NumPy arrays are passed to C++ without intermediate copies.
+- **GIL released**: Encode/decode run outside the Python GIL, enabling real multi-threaded 
+
+| Algorithm      | Video Length   | Shape          | Loading      | Saving       |
+|----------------|----------------|----------------|----------------|----------------|
+| TRVL           | 139            | (350, 630)  | 129.19 ms  | 165.75 ms  |
+
+Note that these were measured in Python with much of the running time coming from the bindings.
 
 <a name="installation"></a>
 ## 🏗️ Installation
@@ -50,6 +71,7 @@ fast-depth-compression/
 ### Prerequisites
 
 These prereuisities are currently based on my current setups, I have tested the package on.
+All tests were made on *Ubuntu 22.4*
 
 So, before installation, ensure you have:
 
@@ -63,13 +85,9 @@ So, before installation, ensure you have:
 ```bash
 # Ubuntu/Debian
 sudo apt-get update
-sudo apt-get install libopencv-dev cmake build-essential
-
-# macOS with Homebrew
-brew install opencv cmake
-
-# Windows with vcpkg
-vcpkg install opencv
+sudo apt-get install cmake build-essential
+# (Optional) If you want to build tests
+sudo apt-get install libopencv-dev 
 ```
 
 ### 🚀 Install fdcomp
@@ -84,10 +102,12 @@ pip install .
 pip install -e .
 ```
 
-#### Option 3: With Build Dependencies
+#### Option 3: Build C++ backend with tests
 ```bash
-pip install scikit-build
-pip install .
+mkdir build
+cd build
+cmake -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CPP_TESTS=ON ..
+cmake --build .
 ```
 
 <a name="quick-start"></a>
@@ -173,164 +193,279 @@ print(f"Reconstruction error: {l2_error}")  # Should be 0.0
 <a name="api-reference"></a>
 ## 📖 API Reference
 
-### Base Classes
+The fdcomp API consists of a high-level Python interface powered by an optimized C++ backend with zero-copy operations and NumPy integration.
 
-#### Encoders
+### 🐍 Python API
+
+#### High-Level Functions
+
+``save(data: np.ndarray, file: Union[str, Path], encoder: Union[str, Encoder] = "trvl", **kwargs)``
+- Save depth data to compressed file format
+- **data**: NumPy array with depth data (2D or 3D)
+- **file**: Output file path (automatically adds .dep extension)
+- **encoder**: Compression algorithm - "trvl", "rvl", or "raw"
+
+`load(file: Union[str, Path], decoder: Union[str, Decoder] = None, **kwargs) → np.ndarray`
+- Load compressed depth data from file
+- **file**: Input file path
+- **decoder**: Decompression algorithm (auto-detected if None)
+- **Returns**: Reconstructed depth data as NumPy array
+
+``loads(data: Union[bytes, List[bytes]], decoder: Union[str, Decoder], frame_size: int, **kwargs) → np.ndarray``
+- Load depth data from raw compressed bytes
+- **data**: Compressed bytes or list of frame bytes
+- **decoder**: Decompression algorithm
+- **frame_size**: Number of pixels per frame
+
+``dump(data: np.ndarray, encoder: Union[str, Encoder], **kwargs) → Union[bytes, List[bytes]]``
+- Compress depth data to bytes without saving to file
+- **data**: NumPy array with depth data
+- **encoder**: Compression algorithm
+
+``inspect(file: Union[str, Path], print_result: bool = True) → dict``
+- Analyze compressed file metadata
+- **Returns**: Dictionary with file information (shape, dtype, compression type, etc.)
+
+#### Base Classes
 
 **Class: Encoder**
-_Abstract base class for all encoders_
+_C++ backend wrapper for all encoders with optimized NumPy integration_
 
 ```python
 class Encoder:
-    def __call__(self, data: np.ndarray, *args, **kwargs) -> bytes
-    def encode(self, data: np.ndarray, *args, **kwargs) -> bytes
-    def _cast_int16(self, data: np.ndarray, suppress_warnings: bool=False) -> np.ndarray
+    def encode(self, data: np.ndarray, verbose: bool = False, *args, **kwargs) → Union[bytes, List[bytes]]
+    def _cast_int16(self, data: np.ndarray, suppress_warnings: bool = True) → np.ndarray
 ```
 
-- ``__call__(data, *args, **kwargs) → bytes``
-  Invokes the encoder by forwarding to `encode()`.
-- ``encode(data, *args, **kwargs) → bytes``
-  **Abstract**: implement this in subclasses.
-- ``_cast_int16(data, suppress_warnings=False) → np.ndarray``
-  Casts input array to int16, with optional warnings.
+- **encode(data, verbose=False)**: Main encoding method with automatic dtype conversion
+- **_cast_int16(data)**: Smart conversion to int16 with minimal copying (float16→view, float32→narrow+view)
 
-**Class: FrameEncoder**
-_Inherits from Encoder; validates single-frame (2D) inputs_
+**Class: FrameEncoder(Encoder)**
+_Single-frame encoder with C++ backend_
 
 ```python
 class FrameEncoder(Encoder):
-    def encode(self, data: np.ndarray, *args, **kwargs) -> bytes
+    def __init__(self, frame_size: int, suppress_warnings: bool = True)
 ```
 
-- **encode(data, *args, **kwargs) → bytes**
-  Ensures `data.ndim == 2` before encoding.
-
-**Class: VideoEncoder**
-_Inherits from Encoder; wraps a FrameEncoder for multi-frame support_
+**Class: VideoEncoder(Encoder)**
+_Multi-frame encoder with C++ backend_
 
 ```python
 class VideoEncoder(Encoder):
-    def __init__(self, frame_encoder: FrameEncoder = None)
-    def encode(self, data: np.ndarray, *args, **kwargs) -> List[bytes]
+    def __init__(self, frame_encoder: FrameEncoder, suppress_warnings: bool = True)
+    def encode(self, data: np.ndarray, *args, **kwargs) → List[bytes]
 ```
 
-- ``__init__(frame_encoder: FrameEncoder = None)``
-  Optionally accepts a `FrameEncoder` instance.
-- ``encode(data, *args, **kwargs) → List[bytes]``
-  Handles 2D or 3D arrays, delegating per-frame encoding to `frame_encoder`.
-
-#### Decoders
-
 **Class: Decoder**
-_Abstract base class for all decoders_
+_C++ backend wrapper for all decoders with NumPy output optimization_
 
 ```python
 class Decoder:
-    def __call__(self, data: bytes or List[bytes], frame_size: int = None, *args, **kwargs) -> np.ndarray
-    def decode(self, data: bytes or List[bytes], *args, **kwargs) -> np.ndarray
+    def decode(self, data: Union[bytes, List[bytes]], output_size: Tuple[int,int] = None, 
+               dtype = np.int16, verbose: bool = False, *args, **kwargs) → np.ndarray
 ```
 
-- ``__call__(data, frame_size=None, *args, **kwargs) → np.ndarray``
-  Initializes `frame_size` and delegates to `decode()`.
-- ``decode(data, *args, **kwargs) → np.ndarray``
-  **Abstract**: implement this in subclasses.
+- **decode()**: Main decoding method returning NumPy arrays directly from C++
+- **output_size**: Optional reshaping to (height, width)
+- **dtype**: Output data type (int16, float16, float32)
+- **verbose**: Enable timing information
 
-**Class: FrameDecoder**
-_Inherits from Decoder; validates single-frame (bytes) inputs_
+**Class: FrameDecoder(Decoder)**
+_Single-frame decoder with C++ backend_
 
-```python
-class FrameDecoder(Decoder):
-    def decode(self, data: bytes, *args, **kwargs) -> np.ndarray
-```
+**Class: VideoDecoder(Decoder)**
+_Multi-frame decoder with C++ backend_
 
-- ``decode(data, *args, **kwargs) → np.ndarray``
-  Ensures per-frame decoding logic is applied correctly.
+#### Algorithm Implementations
 
-**Class: VideoDecoder**
-_Inherits from Decoder; wraps a FrameDecoder for multi-frame support_
+**TRVL (Temporal RVL) - Optimized for depth video sequences**
 
-```python
-class VideoDecoder(Decoder):
-    def __init__(self, frame_decoder: FrameDecoder = None)
-    def decode(self, data: List[bytes], *args, **kwargs) -> List[np.ndarray]
-```
-
-- ``__init__(frame_decoder: FrameDecoder = None)``
-  Optionally accepts a `FrameDecoder` instance.
-- ``decode(data, *args, **kwargs) → List[np.ndarray]``
-  Decodes each frame via `frame_decoder` and returns a list of arrays.
-
-### Algorithm Implementations
-
-#### TRVL
-| Class                  | Description                                    | Key Params                                      |
+| Class                  | Description                                    | Key Parameters                                  |
 |------------------------|------------------------------------------------|-------------------------------------------------|
-| `EncoderTRVL`          | Frame-level temporal RVL encoder               | `frame_size`, `change_threshold`, `invalidation_threshold` |
-| `EncoderTRVLVideo`     | Video encoder with keyframe interval           | `frame_size`, `keyframe_interval`, ...          |
-| `DecoderTRVL`          | Frame-level temporal RVL decoder               | `frame_size`                                    |
-| `DecoderTRVLVideo`     | Video decoder handling keyframes               | `frame_size`, `keyframes`                       |
+| `EncoderTRVL`          | Frame-level TRVL encoder                       | `frame_size`, `change_threshold=10`, `invalidation_threshold=2` |
+| `EncoderTRVLVideo`     | Video TRVL encoder with keyframe support      | `frame_size`, `keyframe_interval=10`, `change_threshold=10`, `invalidation_threshold=2` |
+| `DecoderTRVL`          | Frame-level TRVL decoder                       | `frame_size` |
+| `DecoderTRVLVideo`     | Video TRVL decoder with keyframe handling     | `frame_size`, `keyframe_interval=10` |
 
-#### RVL
-| Class                  | Description                                    | Key Params                                      |
+**RVL (Run-Length Variable) - Fast general-purpose compression**
+
+| Class                  | Description                                    | Key Parameters                                  |
 |------------------------|------------------------------------------------|-------------------------------------------------|
-| `EncoderRVL`           | Frame-level RVL encoder                        | `frame_size`                                    |
-| `EncoderRVLVideo`      | Video RVL encoder                              | `frame_size`                                    |
-| `DecoderRVL`           | Frame-level RVL decoder                        | `frame_size`                                    |
-| `DecoderRVLVideo`      | Video RVL decoder                              | `frame_size`                                    |
+| `EncoderRVL`           | Frame-level RVL encoder                        | `frame_size` |
+| `EncoderRVLVideo`      | Video RVL encoder                              | `frame_size` |
+| `DecoderRVL`           | Frame-level RVL decoder                        | `frame_size` |
+| `DecoderRVLVideo`      | Video RVL decoder with optimized flat output  | `frame_size` |
 
-### File I/O Utilities
+**Raw - Uncompressed NumPy serialization**
 
-- **save(data: np.ndarray, filename: str, encoder: Union[str, Encoder])**
-- **load(filename: str, decoder: Union[str, Decoder]) → np.ndarray**
-- **loads(data: Union[bytes, List[bytes]], decoder: Union[str, Decoder]) → np.ndarray**
-- **dump(data: np.ndarray, encoder: Union[str, Encoder]) → bytes**
+| Class                  | Description                                    |
+|------------------------|------------------------------------------------|
+| `EncoderRaw`           | NumPy array serialization                     |
+| `EncoderRawVideo`      | Multi-frame NumPy serialization               |
+| `DecoderRaw`           | NumPy array deserialization                   |
+| `DecoderRawVideo`      | Multi-frame NumPy deserialization             |
 
-<a name="tests"></a>
-## 🧪 Tests
+### ⚡ C++ Backend API
 
-Unit tests cover all core algorithms and I/O functions, ensuring lossless compression across both TRVL and RVL implementations.
+The C++ backend provides high-performance implementations with zero-copy operations and optimized memory management.
 
-- **test_trvl.py**: Verify TRVL emporal encoder/decoder frame-wise and for videos.
-- **test_rvl.py**: Verify RVL emporal encoder/decoder frame-wise and for videos.
-- **test_io.py**: Verify I/O operations for TRVL and RVL algorithms.
+#### Base Classes
 
-To run all tests:
-
-```bash
-pytest -v --disable-warnings --maxfail=1
+**FrameEncoder**
+```cpp
+class FrameEncoder {
+public:
+    explicit FrameEncoder(int frame_size);
+    virtual std::vector<char> encode(short* depth_buffer) = 0;
+    
+    int getFrameSize();
+    void setFrameSize(int frame_size);
+};
 ```
 
-To run separate test with outputs:
-```bash
-python tests/test_trvl.py 
+**VideoEncoder**
+```cpp
+class VideoEncoder {
+public:
+    VideoEncoder(FrameEncoder* encoder);
+    
+    std::vector<std::vector<char>> encode(short* depth_buffer, int num_frames);
+    std::vector<std::vector<char>> encode(short* depth_buffer);
+    
+    void setFrameEncoder(FrameEncoder* encoder);
+    void setFrameSize(int frame_size);
+    void setNumFrames(int num_frames);
+    int getFrameSize();
+    int getNumFrames();
+};
 ```
 
+**FrameDecoder**
+```cpp
+class FrameDecoder {
+public:
+    explicit FrameDecoder(int frame_size);
+    virtual std::vector<short> decode(char* compressed_bytes) = 0;
+    
+    int getFrameSize();
+    void setFrameSize(int frame_size);
+};
+```
 
+**VideoDecoder**
+```cpp
+class VideoDecoder {
+public:
+    explicit VideoDecoder(FrameDecoder* decoder);
+    
+    std::vector<std::vector<short>> decode(std::vector<char*> video_bytes);
+    std::vector<std::vector<short>> decode(std::vector<std::vector<char>> video_bytes);
+    
+    void setFrameDecoder(FrameDecoder* decoder);
+    void setFrameSize(int frame_size);
+    void setNumFrames(int num_frames);
+    int getFrameSize();
+    int getNumFrames();
+};
+```
 
-<a name="algorithm-references"></a>
+#### TRVL Implementation
+
+**trvl::EncoderTRVL**
+```cpp
+class EncoderTRVL : public FrameEncoder {
+public:
+    EncoderTRVL(int frame_size, short change_threshold, int invalidation_threshold);
+    
+    std::vector<char> encode(short* depth_buffer, bool keyframe);
+    std::vector<char> encode(short* depth_buffer) override;
+    void setKeyframe(bool is_keyframe);
+};
+```
+
+**trvl::VideoEncoderTRVL**
+```cpp
+class VideoEncoderTRVL : public VideoEncoder {
+public:
+    VideoEncoderTRVL(int keyframe_interval, int frame_size, 
+                     short change_threshold, int invalidation_threshold);
+    
+    std::vector<std::vector<char>> encode(short* depth_buffer) override;
+};
+```
+
+**trvl::DecoderTRVL**
+```cpp
+class DecoderTRVL : public FrameDecoder {
+public:
+    explicit DecoderTRVL(int frame_size);
+    
+    std::vector<short> decode(char* trvl_frame, bool keyframe);
+    std::vector<short> decode(char* compressed_bytes) override;
+};
+```
+
+**trvl::VideoDecoderTRVL**
+```cpp
+class VideoDecoderTRVL : public VideoDecoder {
+public:
+    VideoDecoderTRVL(int keyframe_interval, int frame_size);
+    
+    std::vector<short> decode(std::vector<char*>& video_bytes, std::vector<int> keyframes);
+    std::vector<std::vector<short>> decode(std::vector<char*>& video_bytes) override;
+    void setKeyframeInterval(int interval);
+};
+```
+
+#### RVL Implementation
+
+**EncoderRVL**
+```cpp
+class EncoderRVL : public FrameEncoder {
+public:
+    explicit EncoderRVL(int frame_size);
+    std::vector<char> encode(short* depth_buffer) override;
+};
+```
+
+**VideoEncoderRVL**
+```cpp
+class VideoEncoderRVL : public VideoEncoder {
+public:
+    explicit VideoEncoderRVL(int frame_size);
+};
+```
+
+**DecoderRVL**
+```cpp
+class DecoderRVL : public FrameDecoder {
+public:
+    explicit DecoderRVL(int frame_size);
+    std::vector<short> decode(char* compressed_bytes) override;
+};
+```
+
+**VideoDecoderRVL**
+```cpp
+class VideoDecoderRVL : public VideoDecoder {
+public:
+    explicit VideoDecoderRVL(int frame_size);
+    
+    std::vector<std::vector<short>> decode(std::vector<char*>& video_bytes) override;
+    std::vector<int16_t> decode_flat(std::vector<char*>& video_bytes, int& elems_per_frame_out);
+};
+```
+
 ## 📜 Algorithm References
 If you use this library in your work, please consider citing the authors of the compression algorithms used:
 
-- **RVL**: Wilson, A. D. (2017). "Fast lossless depth image compression." *ACM International Conference on Interactive Surfaces and Spaces*
-- **TRVL**: Jun, H & Bailenson, J. (2020). "Temporal RVL: A Depth Stream Compression Method"
+- **RVL Algorithm**: Based on Wilson, A. D. (2017). "Fast lossless depth image compression." The original RVL implementation (files `backend/cpp/include/rvl.h`) is licensed under Apache 2.0.
 
-<a name="contributing"></a>
-## 🤝 Contributing
+- **TRVL Algorithm**: Based on Jun, H & Bailenson, J. (2020). "Temporal RVL: A Depth Stream Compression Method." The original TRVL implementation (files `backend/cpp/include/trvl.h`) is licensed under Apache 2.0, derived from [https://github.com/hanseuljun/temporal-rvl](https://github.com/hanseuljun/temporal-rvl).
 
-I welcome any contributions or algorithm requests for depth compression. Provided how much work is required, meaning whether there is an existing C++ implementation or only documentation, this process might take longer.
-
-### Upcoming Changes
-There are a few things that are already planned to be added/changed:
-- The complete abstraction layer and implementation of frame-wise and video encoder/decoders has to be moved to the C++ backend
-- Tests exclusively for the C++ backend
-- Tests to profile the encoder and decoder with comprehensive summary
 
 <a name="license"></a>
 ## 📄 License
 
-Parts of this project (`./backend/cpp/include/rvl.h`, `./backend/cpp/include/trvl.h`) are licensed under Apache 2.0, taken from [https://github.com/hanseuljun/temporal-rvl/tree/master](https://github.com/hanseuljun/temporal-rvl/tree/master)
-
-All other parts are licensed under the **Apache 2.0** license.
-
-
-
+This project is licensed under the **Apache License 2.0**.

@@ -44,7 +44,6 @@ class Decoder:
 
         data_uncompressed = self._decode_fn(data, *args, **kwargs)
 
-        # If the binding already returns a NumPy array[int16], avoid copying
         if isinstance(data_uncompressed, np.ndarray):
             arr = data_uncompressed
             if arr.dtype != np.int16:
@@ -63,12 +62,10 @@ class Decoder:
             if arr.ndim == 1:
                 arr = arr.reshape(*output_size)
             elif arr.ndim == 2 and np.prod(output_size) == arr.shape[1]:
-                # already (frames, elems_per_frame); leave as-is or reshape to (frames, H, W)
                 arr = arr.reshape(-1, *output_size)
             else:
                 arr = arr.reshape(-1, *output_size)
 
-        # arr is int16; NaN check is unnecessary (integers cannot be NaN).
         return arr
 
     def _decode_verbose(
@@ -192,9 +189,8 @@ class DecoderTRVLVideo(Decoder, fb.VideoDecoderTRVL):
                  frame_size: int = 0,
                  keyframe_interval: int = 10,
                  suppress_warnings: bool = True):
-        # Validate keyframe_interval to prevent division by zero
         if keyframe_interval <= 0:
-            keyframe_interval = 1  # Default to 1 if invalid
+            keyframe_interval = 1  
             if not suppress_warnings:
                 print(colored("Warning: ", "yellow"), f"Invalid keyframe_interval ({keyframe_interval}), setting to 1")
         

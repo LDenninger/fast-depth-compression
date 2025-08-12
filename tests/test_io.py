@@ -15,7 +15,7 @@ except Exception as e:
 
 TRVL_PATH = './examples/depth_trvl_tmp'
 RVL_PATH  = './examples/depth_rvl_tmp'
-RAW_PATH  = './examples/depth_raw_tmp'   # add raw path
+RAW_PATH  = './examples/depth_raw_tmp'  
 
 def load(path: str = './examples/depth.npz'):
     depth = np.load(path)['depth']
@@ -47,7 +47,7 @@ def test_saving(path: str = './examples/depth.npz'):
         traceback.print_exc()
         success = True
 
-    print(colored("\nTest: Saving using raw encoder.", "blue"))  # add raw save
+    print(colored("\nTest: Saving using raw encoder.", "blue"))  
     try:
         fdcomp.save(depth, RAW_PATH, 'raw')
         print(colored("SUCCESS: ", 'green'), 'Data saved successfully using raw encoder.')
@@ -85,7 +85,7 @@ def test_loading(path: str = './examples/depth.npz'):
         traceback.print_exc()
         success = False
 
-    print(colored("\nTest: Loading using raw encoder.", "blue"))  # add raw load
+    print(colored("\nTest: Loading using raw encoder.", "blue")) 
     try:
         depth_raw = fdcomp.load(RAW_PATH, 'raw')
         print(colored("SUCCESS: ", 'green'), 'Data loaded successfully using raw encoder.')
@@ -116,7 +116,7 @@ def test_loading(path: str = './examples/depth.npz'):
             print(colored("ERROR: ", 'red'), f'RVL loaded data has high MSE: {mse_rvl}')
             success = False
 
-    if depth_raw is not None:  # raw is lossless
+    if depth_raw is not None: 
         if depth.shape != depth_raw.shape:
             print(colored("ERROR: ", 'red'), f'Raw loaded data shape {depth_raw.shape} does not match original {depth.shape}')
             success = False
@@ -155,7 +155,7 @@ def test_dumping(path: str = './examples/depth.npz'):
         traceback.print_exc()
         success = False
 
-    print(colored("\nTest: Dumping using raw encoder.", "blue"))  # add raw dump
+    print(colored("\nTest: Dumping using raw encoder.", "blue"))  
     try:
         data_raw = fdcomp.dump(depth, 'raw')
         print(colored("SUCCESS: ", 'green'), 'Data dumped successfully using raw encoder.')
@@ -167,7 +167,6 @@ def test_dumping(path: str = './examples/depth.npz'):
     print(colored("\nTest: Loading from TRVL dump.", "blue"))
     try:
         data_trvl_dec = fdcomp.loads(data_trvl, 'trvl', frame_size=frame_size, output_size=depth.shape[-2:], dtype=np.float32)
-        #data_trvl_dec = data_trvl_dec.view(np.float16).reshape(depth.shape)
         print(colored("SUCCESS: ", 'green'), 'Data decoded successfully from TRVL dump.')
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while decoding TRVL dump:\n{e}')
@@ -177,14 +176,13 @@ def test_dumping(path: str = './examples/depth.npz'):
     print(colored("\nTest: Loading from RVL dump.", "blue"))
     try:
         data_rvl_dec = fdcomp.loads(data_rvl, 'rvl', frame_size=frame_size, output_size=depth.shape[-2:], dtype=np.float32)
-        #data_rvl_dec = data_rvl_dec.view(np.float16).reshape(depth.shape)
         print(colored("SUCCESS: ", 'green'), 'Data decoded successfully from RVL dump.')
     except Exception as e:
         print(colored("ERROR: ", 'red'), f'An error occurred while decoding RVL dump:\n{e}')
         traceback.print_exc()
         success = False
 
-    print(colored("\nTest: Loading from raw dump.", "blue"))  # add raw loads
+    print(colored("\nTest: Loading from raw dump.", "blue"))  
     try:
         data_raw_dec = fdcomp.loads(data_raw, 'raw')
         print(colored("SUCCESS: ", 'green'), 'Data decoded successfully from raw dump.')

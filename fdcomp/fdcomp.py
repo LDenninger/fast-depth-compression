@@ -31,7 +31,20 @@ def inspect(file: Union[str, Path],
             return_result: bool = True,
             print_result: bool = True,
             printf: callable = print) -> Union[dict, None]:
+    """
+    Inspect a compressed depth file and extract metadata information.
     
+    Supports both custom compressed formats (.dep) and numpy formats (.npy, .npz, .np).
+    Reads file headers to extract shape, dtype, encoder type, and additional data.
+    
+    :param file: Path to the file to inspect.
+    :param return_result: Whether to return the metadata as a dictionary.
+    :param print_result: Whether to print the metadata to console.
+    :param printf: Function to use for printing (defaults to built-in print).
+    :return: Dictionary containing file metadata if return_result is True, otherwise None.
+    :raises FileNotFoundError: If the specified file does not exist.
+    """
+
     file = Path(file)
     if not file.exists():
         raise FileNotFoundError(f"File {file} does not exist.")
@@ -46,7 +59,6 @@ def inspect(file: Union[str, Path],
     
         try:
             with open(file, 'rb') as f:
-                # Read header line
                 header = f.readline().decode('ascii').strip()[1:]
                 header_parts = header.split('; ')
                 
@@ -94,11 +106,19 @@ def load(file: Union[str, Path],
          return_meta: bool = False,
          *args, **kwargs) -> np.ndarray:
     """
-    Load a depth map from a file using the provided decoder.
+    Load and decode a depth map from a compressed file.
     
-    :param file: Path to the file containing the depth map.
-    :param decoder: An instance of a Decoder subclass or a string indicating the decoder type. Available options: ['trvl', 'rvl', 'raw'].
-    :return: The decoded depth map as a numpy array.
+    Automatically detects the compression format from file headers and uses the 
+    appropriate decoder. Supports TRVL, RVL, and raw compression formats.
+    
+    :param file: Path to the file containing the compressed depth map.
+    :param decoder: Decoder type to use. If None, auto-detects from file header.
+                   Available options: ['trvl', 'rvl', 'raw'].
+    :param return_meta: Whether to return metadata along with the decoded data.
+    :param args: Additional arguments passed to the decoder.
+    :param kwargs: Additional keyword arguments passed to the decoder.
+    :return: The decoded depth map as a numpy array, optionally with metadata.
+    :raises ValueError: If an unsupported decoder type is specified.
     """
     if isinstance(decoder, str):
         if decoder.lower() == "trvl":
@@ -117,11 +137,20 @@ def loads(data: Union[bytes, List[bytes]],
           output_size: Tuple[int,int] = None, dtype = np.int16,
           *args, **kwargs) -> np.ndarray:
     """
-    Load a depth map from raw bytes using the provided decoder.
+    Load and decode depth maps from raw compressed bytes.
     
-    :param data: Raw bytes containing the depth map.
-    :param decoder: An instance of a Decoder subclass or a string indicating the decoder type. Available options: ['trvl', 'rvl', 'raw'].
-    :return: The decoded depth map as a numpy array.
+    Decodes depth data directly from memory without file I/O. Useful for 
+    streaming applications or when working with compressed data in memory.
+    
+    :param data: Raw bytes or list of byte arrays containing compressed depth data.
+    :param decoder: Decoder instance or string specifying decoder type.
+                   Available options: ['trvl', 'rvl', 'raw'].
+    :param output_size: Expected output dimensions (height, width) for the decoded frames.
+    :param dtype: Data type for the decoded array (default: np.int16).
+    :param args: Additional arguments passed to the decoder.
+    :param kwargs: Additional keyword arguments passed to the decoder.
+    :return: The decoded depth map(s) as a numpy array.
+    :raises ValueError: If decoder type is unsupported or required parameters are missing.
     """
     if isinstance(decoder, str):
         if decoder.lower() == "trvl":
@@ -147,12 +176,20 @@ def dump(data: np.ndarray,
          encoder: Union[Decoder, Literal['trvl', 'rvl', 'raw']] = None, 
          *args, **kwargs) -> None:
     """
-    Save a depth map to a file using the provided encoder.
+    Encode depth map data to compressed bytes without saving to file.
     
-    :param data: The depth map to be saved as a numpy array.
-    :param file: Path to the file where the depth map will be saved.
-    :param encoder: An instance of an Encoder subclass or a string indicating the encoder type. Available options: ['trvl', 'rvl', 'raw'].
+    Compresses depth data using the specified encoder and returns the raw 
+    compressed bytes. Useful for streaming or in-memory compression operations.
+    
+    :param data: The depth map(s) to be compressed as a numpy array.
+    :param encoder: Encoder instance or string specifying encoder type.
+                   Available options: ['trvl', 'rvl', 'raw'].
+    :param args: Additional arguments passed to the encoder.
+    :param kwargs: Additional keyword arguments passed to the encoder.
+    :return: Compressed data as bytes.
+    :raises ValueError: If an unsupported encoder type is specified.
     """
+
     if isinstance(encoder, str):
         if encoder.lower() == "trvl":
             frame_size = data.shape[-1] * data.shape[-2]
@@ -169,16 +206,26 @@ def dump(data: np.ndarray,
 
 def save(data: np.ndarray, 
          file: Union[str, Path] = None, 
-         encoder: Union[Decoder, Literal['trvl', 'rvl', 'raw']] = None, 
+         encoder: Union[Decoder, Literal['trvl', 'rvl', 'raw']] = "trvl", 
          meta: FileMeta = None,
          *args, **kwargs) -> None:
     """
-    Save a depth map to a file using the provided encoder.
+    Compress and save depth map data to a file.
     
-    :param data: The depth map to be saved as a numpy array.
-    :param file: Path to the file where the depth map will be saved.  Optional if `meta` is provided.
-    :param encoder: An instance of an Encoder subclass or a string indicating the encoder type. Available options: ['trvl', 'rvl', 'raw'].
-    :param meta: Optional metadata about the file, such as shape, dtype, and encoder type.
+    Encodes depth data using the specified compression algorithm and saves it
+    with appropriate headers for later decoding. Automatically handles file
+    extension and format detection.
+    
+    :param data: The depth map(s) to be saved as a numpy array.
+    :param file: Path where the compressed depth map will be saved. 
+                Optional if meta parameter contains path information.
+    :param encoder: Encoder instance or string specifying compression type.
+                   Available options: ['trvl', 'rvl', 'raw']. Defaults to 'trvl'.
+    :param meta: Optional FileMeta object containing file metadata and path information.
+    :param args: Additional arguments passed to the encoder.
+    :param kwargs: Additional keyword arguments passed to the encoder.
+    :raises ValueError: If encoder type is unsupported.
+    :raises AssertionError: If neither file nor meta parameter is provided.
     """
     if file is None:
         assert meta is not None, "Either 'file' or 'meta' must be provided."
@@ -204,9 +251,27 @@ def save(data: np.ndarray,
 
 
 class Saver:
+    """
+    Static class for saving compressed depth data to files.
+    
+    Handles the low-level file writing operations, including header generation,
+    data encoding, and binary file format management.
+    """
 
     @classmethod
     def save(cls, data: np.ndarray, save_path: str, encoder: Encoder = None, *args, **kwargs):
+        """
+        Save numpy array data to a compressed depth file format.
+        
+        Writes a custom binary format with ASCII header containing metadata
+        followed by compressed frame data blocks with length prefixes.
+        
+        :param data: Numpy array containing depth data to compress and save.
+        :param save_path: File path where the compressed data will be written.
+        :param encoder: Encoder instance to use for compression. Uses default if None.
+        :param args: Additional arguments passed to the encoder.
+        :param kwargs: Additional keyword arguments passed to the encoder.
+        """
         shape = data.shape
         dtype = data.dtype
         encoder = encoder or DEFAULT_ENCODER(frame_size=shape[-1] * shape[-2], *args, **kwargs)
@@ -227,29 +292,38 @@ class Saver:
         data_encoded = encoder.encode(data)
         keyframes = []
 
-
-        # Open in binary mode
         with open(save_path, 'wb') as f:
-            # Write header as ASCII, terminated by newline
             header = f"!{shape}; {dtype}; {encoder.name}; {keyframes}\n"
             f.write(header.encode('ascii'))
             for i in range(len(data_encoded)):
-                block = data_encoded[i]  # raw bytes
-                # First write a 4-byte big-endian length:
+                block = data_encoded[i]  
                 f.write(struct.pack('>I', len(block)))
-                # Then the raw compressed bytes
                 f.write(block)
 
 class Loader:
+    """
+    Static class for loading compressed depth data from files.
+    
+    Handles the low-level file reading operations, including header parsing,
+    data decoding, and binary file format management.
+    """
 
     @classmethod
     def load(cls, path: str, decoder: Decoder = None, return_meta: bool = False, *args, **kwargs) -> List[np.ndarray]:
         """
-        Load a depth map from a file using the provided decoder.
+        Load compressed depth data from file and decode to numpy arrays.
         
-        :param path: Path to the file containing the depth map.
-        :param decoder: An instance of a Decoder subclass.
-        :return: A list of decoded depth maps as numpy arrays.
+        Reads custom binary format files with ASCII headers, automatically
+        detects compression type, and decodes the data using appropriate decoder.
+        Also supports loading standard numpy (.npy) files.
+        
+        :param path: Path to the compressed depth file to load.
+        :param decoder: Decoder instance to use. Auto-detects from file if None.
+        :param return_meta: Whether to return FileMeta object along with data.
+        :param args: Additional arguments passed to the decoder.
+        :param kwargs: Additional keyword arguments passed to the decoder.
+        :return: Decoded depth data as numpy array, optionally with metadata.
+        :raises ValueError: If decoder doesn't match file format or unsupported format.
         """
         path = Path(path)
         if path.suffix == "":
@@ -260,7 +334,6 @@ class Loader:
             return arr, meta if return_meta else arr
         
         with open(path, 'rb') as f:
-            # Read header line
             header = f.readline().decode('ascii').strip()[1:]
             header_parts = header.split('; ')
             data_add = None
@@ -273,7 +346,6 @@ class Loader:
 
             frame_size = shape[-2] * shape[-1]
 
-            # Instantiate decoder if needed
             if decoder is None:
                 if enc_name == "TRVL":
                     decoder = DecoderTRVLVideo(shape[-2]*shape[-1], *args, **kwargs)
@@ -288,23 +360,22 @@ class Loader:
 
             frames = []
             frames_enc = []
-            # Now read until EOF
             while True:
-                # Read 4-byte length prefix
                 length_bytes = f.read(4)
                 if not length_bytes:
-                    break  # EOF
+                    break 
                 (block_len,) = struct.unpack('>I', length_bytes)
                 block = f.read(block_len)
                 frames_enc.append(block)
 
         if enc_name == "TRVL":
-            if data_add == None or data_add.strip("[]") == "":
-                keyframes = []
-                arr = decoder.decode(frames_enc, frame_size=frame_size)
-            else:
-                keyframes = list(map(int, data_add.strip("[]").split(",")))
-                arr = decoder.decode(frames_enc, frame_size=frame_size, keyframes=keyframes)
+            # TODO: Fix this for providing keyframes
+            #if data_add == None or data_add.strip("[]") == "":
+            keyframes = []
+            arr = decoder.decode(frames_enc, frame_size=frame_size)
+            #else:
+            #    keyframes = list(map(int, data_add.strip("[]").split(",")))
+            #    arr = decoder.decode(frames_enc, frame_size=frame_size, keyframes=keyframes)
         else:
             arr = decoder.decode(frames_enc, frame_size=frame_size)
 

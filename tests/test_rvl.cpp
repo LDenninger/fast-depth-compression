@@ -5,8 +5,8 @@
 #include <vector>
 #include <string>
 #include <cmath>
-#include <chrono>             // added for timing
-#include <opencv2/opencv.hpp>   // Requires OpenCV
+#include <chrono>             
+#include <opencv2/opencv.hpp>   
 #include "../backend/cpp/include/rvl.h"
 
 std::vector<int> array_shape = {8, 704, 1280};
@@ -85,7 +85,6 @@ int main(int argc, char** argv) {
 
         save_depth_frame_visuals(first_frame, width, height, "frame_before");
 
-        // measure frame encode time
         auto start_fenc = std::chrono::high_resolution_clock::now();
         auto compressed = encoder.encode(first_frame);
         auto end_fenc   = std::chrono::high_resolution_clock::now();
@@ -93,7 +92,6 @@ int main(int argc, char** argv) {
                   << std::chrono::duration<double, std::milli>(end_fenc - start_fenc).count()
                   << " ms\n";
 
-        // measure frame decode time
         auto start_fdec    = std::chrono::high_resolution_clock::now();
         auto decompressed  = decoder.decode(compressed.data());
         auto end_fdec      = std::chrono::high_resolution_clock::now();
@@ -122,7 +120,6 @@ int main(int argc, char** argv) {
         VideoEncoderRVL venc(frame_pixels);
         VideoDecoderRVL vdec(frame_pixels);
 
-        // measure video encode time
         auto start_venc = std::chrono::high_resolution_clock::now();
         auto compressed_video = venc.encode(depth.data(), n_frames);
         auto end_venc   = std::chrono::high_resolution_clock::now();
@@ -135,7 +132,6 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        // Prepare visuals for original frames (optional)
         for (int f = 0; f < n_frames; ++f) {
             short* frame_ptr = depth.data() + f * frame_pixels;
             save_depth_frame_visuals(frame_ptr, width, height, "video_before_f" + std::to_string(f));
@@ -147,7 +143,6 @@ int main(int argc, char** argv) {
             compr_video.push_back(buf.data());
         }
 
-        // measure video decode time
         auto start_vdec = std::chrono::high_resolution_clock::now();
         auto decoded_frames = vdec.decode(compr_video);
         auto end_vdec   = std::chrono::high_resolution_clock::now();
@@ -160,7 +155,6 @@ int main(int argc, char** argv) {
             return 1;
         }
 
-        // Validate each frame
         for (int f = 0; f < n_frames; ++f) {
             const auto &decoded = decoded_frames[f];
             if ((int)decoded.size() != frame_pixels) {
