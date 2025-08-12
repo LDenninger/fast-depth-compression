@@ -23,56 +23,84 @@ __all__ = [
 ################### Base Classes ######################
 #######################################################
 class Encoder:
-    def __init__(self, 
-                 suppress_warnings: bool = True,
-                 encode_fn = None,
-                 ):
+    def __init__(
+        self,
+        suppress_warnings: bool = True,
+        encode_fn=None,
+    ):
         self.suppress_warnings = suppress_warnings
         self._encode_fn = encode_fn
-        return
-    
-    def encode(self, data: np.ndarray, verbose: bool = False, *args, **kwargs) -> Union[List[bytes],bytes]:
+
+    def encode(self, data: np.ndarray, verbose: bool = False, *args, **kwargs) -> Union[List[bytes], bytes]:
         if verbose:
             return self._encode_verbose(data, *args, **kwargs)
         if self._encode_fn is None:
-            raise NotImplementedError("Encoder must be supplied with the encoding function ('encode_fn' argument in constructor) or reimplement the encode() function.")
+            raise NotImplementedError(
+                "Encoder must be supplied with the encoding function ('encode_fn' argument in constructor) "
+                "or reimplement the encode() function."
+            )
+
+        # Ensure dtype=int16 without unnecessary copies
         data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
-        data = np.ascontiguousarray(data).ravel().tolist()
+        # Ensure C-contiguous and flatten to 1D, but KEEP as NumPy array (no .tolist())
+        data = np.ascontiguousarray(data).ravel()
+
+        # Pass the NumPy buffer directly to the optimized bindings (no Python list conversion)
         data_compressed = self._encode_fn(data, *args, **kwargs)
-        return data_compressed
-    
-    def _encode_verbose(self, data: np.ndarray, *args, **kwargs) -> Union[List[bytes],bytes]:
-        if self._encode_fn is None:
-            raise NotImplementedError("Encoder must be supplied with the encoding function ('encode_fn' argument in constructor) or reimplement the encode() function.")
-        data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
-        start_time = time.perf_counter()
-        data = np.ascontiguousarray(data).ravel().tolist()
-        end_time = time.perf_counter()
-        conversion_time = (end_time - start_time) * 1000  # in milliseconds
-        print(f"Conversion time: {conversion_time:.2f} ms")
-        start_time = time.perf_counter()
-        data_compressed = self._encode_fn(data, *args, **kwargs)
-        end_time = time.perf_counter()
-        encoding_time = (end_time - start_time) * 1000  # in milliseconds
-        print(f"Encoding time: {encoding_time:.2f} ms")
         return data_compressed
 
-    
+    def _encode_verbose(self, data: np.ndarray, *args, **kwargs) -> Union[List[bytes], bytes]:
+        if self._encode_fn is None:
+            raise NotImplementedError(
+                "Encoder must be supplied with the encoding function ('encode_fn' argument in constructor) "
+                "or reimplement the encode() function."
+            )
+
+        # Cast timing
+        t0 = time.perf_counter()
+        data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
+        t1 = time.perf_counter()
+
+        # Contiguity/flatten timing
+        data = np.ascontiguousarray(data).ravel()
+        t2 = time.perf_counter()
+
+        print(f"Conversion (dtype cast) time: {(t1 - t0) * 1000:.2f} ms")
+        print(f"Contiguous+flatten time: {(t2 - t1) * 1000:.2f} ms")
+
+        # Encode timing
+        t3 = time.perf_counter()
+        data_compressed = self._encode_fn(data, *args, **kwargs)
+        t4 = time.perf_counter()
+        print(f"Encoding time: {(t4 - t3) * 1000:.2f} ms")
+
+        return data_compressed
+
     def _cast_int16(self, data: np.ndarray, suppress_warnings: bool = True) -> np.ndarray:
         """
-            Casts the input data to int16 if it is of type float16.
+        Casts the input data to int16 if it is of type float16/float32/int32,
+        using view where lossless and avoiding unnecessary copies.
         """
         if data.dtype == np.float16:
-            if not suppress_warnings: print(colored("Warning: ", "yellow"), "Automatically converting float16 to int16 for encoding.")
+            if not suppress_warnings:
+                print(colored("Warning: ", "yellow"), "Automatically converting float16 to int16 for encoding.")
+            # reinterpret (no copy): float16 -> int16 bitwise view
             return data.view(np.int16)
         elif data.dtype == np.float32:
-            if not suppress_warnings: print(colored("Warning: ", "yellow"), "Automatically narrowing float32 to int16 for encoding.")
+            if not suppress_warnings:
+                print(colored("Warning: ", "yellow"), "Automatically narrowing float32 to int16 for encoding.")
+            # narrow then view to int16 (two-bytes packs), results in contiguous copy
             return data.astype(np.float16).view(np.int16)
         elif data.dtype == np.int32:
-            if not suppress_warnings: print(colored("Warning: ", "yellow"), "Automatically narrowing int32 to int16 for encoding.")
+            if not suppress_warnings:
+                print(colored("Warning: ", "yellow"), "Automatically narrowing int32 to int16 for encoding.")
+            return data.astype(np.int16)
+        elif data.dtype != np.int16:
+            # Ensure int16 dtype if something else slipped through
             return data.astype(np.int16)
         return data
-
+    
+    
 class FrameEncoder(Encoder, fb.FrameEncoder):
     """
     Base frame encoder binding wrapper.
@@ -95,7 +123,7 @@ class VideoEncoder(Encoder, fb.VideoEncoder):
         if self._encode_fn is None:
             raise NotImplementedError("Encoder must be supplied with the encoding function ('encode_fn' argument in constructor) or reimplement the encode() function.")
         data = self._cast_int16(data, suppress_warnings=self.suppress_warnings)
-        data = np.ascontiguousarray(data).ravel().tolist()
+        data = np.ascontiguousarray(data).ravel()
         data_compressed = self._encode_fn(data, *args, **kwargs)
         return data_compressed
 
@@ -179,7 +207,7 @@ class EncoderTRVLVideo(Encoder, fb.VideoEncoderTRVL):
         num_frames = data.shape[0]
         
         # Now flatten for the C++ binding
-        data = np.ascontiguousarray(data).ravel().tolist()
+        data = np.ascontiguousarray(data).ravel()
         
         # Call the C++ binding directly with positional arguments
         data_compressed = fb.VideoEncoderTRVL.encode(self, data, num_frames)

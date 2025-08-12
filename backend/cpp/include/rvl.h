@@ -404,18 +404,60 @@ public:
         : VideoDecoder(new DecoderRVL(frame_size)) {
         setFrameSize(frame_size);
     }
+
+    // Existing API (kept for compatibility)
     std::vector<std::vector<short>> decode(std::vector<char*>& video_bytes) {
-        int frames = static_cast<int>(video_bytes.size());
+        const int frames = static_cast<int>(video_bytes.size());
         setNumFrames(frames);
+
         std::vector<std::vector<short>> output;
-        //output.reserve(static_cast<size_t>(frame_size_) * frames);
+        output.reserve(frames);
 
-        DecoderRVL* rvl_dec = static_cast<DecoderRVL*>(frame_decoder_);
-
+        auto* rvl_dec = static_cast<DecoderRVL*>(frame_decoder_);
         for (int i = 0; i < frames; i++) {
             std::vector<short> frame = rvl_dec->decode(video_bytes[i]);
-            output.push_back(frame);
+            output.push_back(std::move(frame));
         }
         return output;
+    }
+
+    // New contiguous decode to minimize allocations & conversions.
+    // Returns a single flat vector<int16_t> of length frames * elems_per_frame.
+    // elems_per_frame is inferred from the first frame and validated for the rest.
+    std::vector<int16_t> decode_flat(std::vector<char*>& video_bytes, int& elems_per_frame_out) {
+        const int frames = static_cast<int>(video_bytes.size());
+        setNumFrames(frames);
+        if (frames == 0) {
+            elems_per_frame_out = 0;
+            return {};
+        }
+
+        auto* rvl_dec = static_cast<DecoderRVL*>(frame_decoder_);
+
+        // Decode first frame to determine per-frame length
+        std::vector<short> first = rvl_dec->decode(video_bytes[0]);
+        const int elems_per_frame = static_cast<int>(first.size());
+        elems_per_frame_out = elems_per_frame;
+
+        std::vector<int16_t> flat;
+        flat.resize(static_cast<size_t>(frames) * elems_per_frame);
+
+        // Copy first frame
+        if (!first.empty()) {
+            std::memcpy(flat.data(), first.data(), first.size() * sizeof(int16_t));
+        }
+
+        // Decode remaining frames directly into the flat buffer
+        for (int i = 1; i < frames; ++i) {
+            std::vector<short> frame = rvl_dec->decode(video_bytes[i]);
+            if (static_cast<int>(frame.size()) != elems_per_frame) {
+                throw std::runtime_error("Inconsistent frame size returned by DecoderRVL::decode");
+            }
+            std::memcpy(flat.data() + static_cast<size_t>(i) * elems_per_frame,
+                        frame.data(),
+                        static_cast<size_t>(elems_per_frame) * sizeof(int16_t));
+        }
+
+        return flat;
     }
 };
